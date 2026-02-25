@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Teste da Câmera</title>
+  <style>
+    body { background:#111; color:#eee; font-family:sans-serif; text-align:center; }
+    video { width: 80%; max-width: 640px; margin-top:20px; border:2px solid #4caf50; border-radius:8px; }
+    #log { margin-top:10px; color:#f88; }
+  </style>
+</head>
+<body>
+  <h2>Teste da Câmera</h2>
+  <p>Se a câmera estiver liberada, você verá a imagem abaixo:</p>
+  <video id="vid" autoplay playsinline></video>
+  <div id="log"></div>
+
+  <script>
+    const vid = document.getElementById("vid");
+    const log = document.getElementById("log");
+
+    async function startCam(){
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        vid.srcObject = stream;
+        log.textContent = "✅ Câmera funcionando!";
+      } catch(err){
+        log.textContent = "❌ Erro: " + err.message;
+        console.error(err);
+      }
+    }
+    startCam();
+  </script>
+</body>
+</html>

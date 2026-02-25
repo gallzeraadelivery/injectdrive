@@ -1,0 +1,6 @@
+node_modules
+*.log
+logs/*.json
+!logs/.gitkeep
+burp-replacement.*
+burp-replacement-path.txt

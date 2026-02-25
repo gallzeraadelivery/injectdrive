@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Login de Proxy</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+    background: linear-gradient(135deg, #0c1222 0%, #1a1f35 50%, #0f1629 100%);
+    color: #e8eaed;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 400px;
+    background: linear-gradient(160deg, rgba(22, 28, 45, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 20px;
+    padding: 32px 28px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03);
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .header-icon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 16px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+  }
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    background: linear-gradient(180deg, #fff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .subtitle { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  .row { margin-bottom: 18px; }
+  label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    display: block;
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+  input {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+    background: rgba(15, 23, 42, 0.6);
+    color: #f1f5f9;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input::placeholder { color: #64748b; }
+  input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 100px; gap: 12px; }
+  .btns { display: flex; gap: 12px; margin-top: 24px; }
+  button {
+    flex: 1;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+  }
+  button#skip {
+    background: rgba(51, 65, 85, 0.6);
+    color: #94a3b8;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+  }
+  button#skip:hover {
+    background: rgba(71, 85, 105, 0.8);
+    color: #e2e8f0;
+  }
+  button#connect {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  }
+  button#connect:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+  }
+  .hint {
+    margin-top: 20px;
+    padding: 12px 16px;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #94a3b8;
+    border-left: 3px solid #6366f1;
+  }
+  .hint code {
+    background: rgba(0,0,0,0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="header-icon">🔐</div>
+      <h1>Conectar Proxy</h1>
+      <p class="subtitle">Configure sua conexão segura</p>
+    </div>
+    <div class="row">
+      <label>Host</label>
+      <input id="host" placeholder="ex: 127.0.0.1 ou npvevxg9.pr.thordata.net">
+    </div>
+    <div class="row grid2">
+      <div>
+        <label>Usuário</label>
+        <input id="user" placeholder="ex: td-customer-xxxxx">
+      </div>
+      <div>
+        <label>Porta</label>
+        <input id="port" placeholder="ex: 8080 (Burp) ou 5555">
+      </div>
+    </div>
+    <div class="row">
+      <label>Senha</label>
+      <input id="pass" type="password" placeholder="••••••••">
+    </div>
+    <div class="btns">
+      <button id="skip">Pular</button>
+      <button id="connect">Conectar</button>
+    </div>
+    <div class="hint">💡 Cole no Host: <code>host:port:user:pass</code> para preencher automaticamente</div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  $('connect').onclick = async () => {
+    const host = $('host').value.trim();
+    const port = $('port').value.trim();
+    const user = $('user').value.trim();
+    const pass = $('pass').value;
+    if (!host || !port) { alert('Informe host e porta'); return; }
+
+    try {
+      await window.proxy.apply({ host, port, user, pass });
+    } catch (e) {
+      alert(e?.message || 'Falha ao conectar no proxy.');
+    }
+  };
+
+  $('skip').onclick = async () => {
+    try { await window.proxy.skip(); } catch (e) {}
+  };
+
+  // atalho: se colar "host:port:user:pass" no campo host, auto-split
+  $('host').addEventListener('input', () => {
+    const v = $('host').value.trim();
+    const parts = v.split(':');
+    if (parts.length === 4) {
+      $('host').value = parts[0];
+      $('port').value = parts[1];
+      $('user').value = parts[2];
+      $('pass').value = parts[3];
+    }
+  });
+</script>
+</body>
+</html>
