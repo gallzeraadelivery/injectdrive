@@ -394,12 +394,16 @@ function buildInjection({ BASE_W, BASE_H, FPS, initialDataUrl, deviceIds }) {
   let STREAM = null;
   const DEVICE_IDS = ${JSON.stringify(ids)};
 
+  let currentImageObjectUrl = null;
   function useImage(dataUrl){ 
-    const img=new Image(); 
-    img.crossOrigin='anonymous';
+    if (!dataUrl || typeof dataUrl !== 'string') return;
+    if (currentImageObjectUrl) {
+      try { URL.revokeObjectURL(currentImageObjectUrl); } catch(e) {}
+      currentImageObjectUrl = null;
+    }
+    const img = new Image();
     img.onload = function() {
       console.log('[Fakecam] Imagem carregada:', img.naturalWidth, 'x', img.naturalHeight);
-      // Força redesenhar o canvas quando a imagem carregar
       if (C) {
         const ctx = C.getContext('2d');
         ctx.fillStyle='#000';
@@ -412,7 +416,6 @@ function buildInjection({ BASE_W, BASE_H, FPS, initialDataUrl, deviceIds }) {
           ctx.scale(state.flipH ? -state.zoom : state.zoom, state.zoom);
           try {
             ctx.drawImage(img, (-img.naturalWidth/2)+state.x, (-img.naturalHeight/2)+state.y);
-            console.log('[Fakecam] Imagem desenhada no canvas');
           } catch(e) {
             console.warn('[Fakecam] Erro ao desenhar imagem:', e);
           }
@@ -423,65 +426,100 @@ function buildInjection({ BASE_W, BASE_H, FPS, initialDataUrl, deviceIds }) {
     img.onerror = function(e) {
       console.error('[Fakecam] Erro ao carregar imagem:', e);
     };
-    img.src=dataUrl; 
-    media=img; 
+    var src = dataUrl;
+    if (dataUrl.indexOf('fakecam://') === 0) {
+      src = dataUrl;
+    } else if (dataUrl.indexOf('data:image/gif') === 0) {
+      try {
+        var mimeMatch = dataUrl.match(/^data:(.+?);base64,/);
+        var mime = (mimeMatch && mimeMatch[1]) || 'image/gif';
+        var b64 = dataUrl.split(',')[1];
+        if (b64) {
+          var bin = atob(b64);
+          var arr = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          var blob = new Blob([arr], { type: mime });
+          currentImageObjectUrl = URL.createObjectURL(blob);
+          src = currentImageObjectUrl;
+        }
+      } catch (e) {
+        console.warn('[Fakecam] GIF blob fallback, usando data URL:', e);
+      }
+    } else {
+      img.crossOrigin = 'anonymous';
+    }
+    img.src = src;
+    media = img;
   }
+  let currentVideoObjectUrl = null;
   function useVideo(dataUrl){
-    const vid=document.createElement('video');
-    vid.src=dataUrl; vid.loop=true; vid.muted=true; vid.playsInline=true; vid.autoplay=true;
-    vid.crossOrigin='anonymous';
-    vid.preload='auto';
+    if (!dataUrl || typeof dataUrl !== 'string') return;
+    if (currentVideoObjectUrl) {
+      try { URL.revokeObjectURL(currentVideoObjectUrl); } catch(e) {}
+      currentVideoObjectUrl = null;
+    }
+    const vid = document.createElement('video');
+    vid.loop = true;
+    vid.muted = true;
     vid.playsInline = true;
-    
-    // Adiciona vídeo ao DOM (oculto) para garantir que pode ser desenhado no canvas
+    vid.autoplay = true;
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('muted', '');
+    vid.preload = 'auto';
+    vid.crossOrigin = 'anonymous';
+    if (dataUrl.indexOf('data:') === 0) {
+      try {
+        const mimeMatch = dataUrl.match(/^data:(.+?);base64,/);
+        const mime = (mimeMatch && mimeMatch[1]) || 'video/mp4';
+        const b64 = dataUrl.split(',')[1];
+        if (b64) {
+          const bin = atob(b64);
+          const arr = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          const blob = new Blob([arr], { type: mime });
+          currentVideoObjectUrl = URL.createObjectURL(blob);
+          vid.src = currentVideoObjectUrl;
+        } else {
+          vid.src = dataUrl;
+        }
+      } catch (e) {
+        console.warn('[Fakecam] Blob URL fallback, usando data URL:', e);
+        vid.src = dataUrl;
+      }
+    } else {
+      vid.src = dataUrl;
+    }
     vid.style.position = 'absolute';
     vid.style.opacity = '0';
     vid.style.pointerEvents = 'none';
     vid.style.width = '1px';
     vid.style.height = '1px';
     vid.style.top = '-9999px';
-    document.body.appendChild(vid);
-    
+    if (document.body) document.body.appendChild(vid);
     let playAttempted = false;
     const tryPlay = () => {
       if (playAttempted) return;
       if (vid.readyState >= 2 && vid.videoWidth > 0) {
         playAttempted = true;
         vid.play().then(() => {
-          console.log('[Liveness] Vídeo iniciado com sucesso');
+          console.log('[Fakecam] Vídeo iniciado com sucesso');
         }).catch((e) => {
-          console.warn('[Liveness] Erro ao reproduzir vídeo:', e);
+          console.warn('[Fakecam] Erro ao reproduzir vídeo:', e);
           playAttempted = false;
         });
       }
     };
-    
-    // Garante que vídeo está pronto e reproduzindo
-    vid.onloadedmetadata = () => {
-      console.log('[Liveness] Vídeo metadata carregada:', vid.videoWidth, 'x', vid.videoHeight);
-      tryPlay();
-    };
-    vid.oncanplay = () => {
-      console.log('[Liveness] Vídeo pode reproduzir');
-      tryPlay();
-    };
-    vid.oncanplaythrough = () => {
-      console.log('[Liveness] Vídeo pode reproduzir completamente');
-      tryPlay();
-    };
-    vid.onplaying = () => {
-      console.log('[Liveness] Vídeo está reproduzindo');
-    };
+    vid.onloadedmetadata = () => { tryPlay(); };
+    vid.oncanplay = () => { tryPlay(); };
+    vid.oncanplaythrough = () => { tryPlay(); };
+    vid.onloadeddata = () => { tryPlay(); };
+    vid.onplaying = () => { };
     vid.onerror = (e) => {
-      console.error('[Liveness] Erro no vídeo:', e, vid.error);
+      console.error('[Fakecam] Erro no vídeo:', vid.error ? vid.error.message : e);
     };
-    
-    // Se vídeo já está pronto, força play imediatamente
-    if (vid.readyState >= 2 && vid.videoWidth > 0) {
-      tryPlay();
-    }
-    
-    media=vid;
+    vid.load();
+    if (vid.readyState >= 2 && vid.videoWidth > 0) tryPlay();
+    media = vid;
   }
   useImage(START);
 
@@ -1326,9 +1364,17 @@ ipcRenderer.on('fakecam:bootstrap', async (_e, data) => {
 ipcRenderer.on('fakecam:params', (_e, params) => window.postMessage({ __FAKECAM__: true, type: 'PARAMS', params }, '*'));
 ipcRenderer.on('fakecam:setImageDataUrl', (_e, url) => {
   window.postMessage({ __FAKECAM__: true, type: 'SET_IMAGE', dataUrl: url }, '*');
+  if (typeof url === 'string' && url.indexOf('data:image/gif') !== 0) {
+    ipcRenderer.send('fakecam:setImageDataUrlBroadcast', url);
+  }
+});
+ipcRenderer.on('fakecam:setImageDataUrlBroadcastToIframes', (_e, url) => {
   ipcRenderer.send('fakecam:setImageDataUrlBroadcast', url);
 });
-ipcRenderer.on('fakecam:setVideoDataUrl', (_e, url) => window.postMessage({ __FAKECAM__: true, type: 'SET_VIDEO', dataUrl: url }, '*'));
+ipcRenderer.on('fakecam:setVideoDataUrl', (_e, url) => {
+  window.postMessage({ __FAKECAM__: true, type: 'SET_VIDEO', dataUrl: url }, '*');
+  ipcRenderer.send('fakecam:setVideoDataUrlBroadcast', url);
+});
 ipcRenderer.on('fakecam:setResolution', (_e, res) => window.postMessage({ __FAKECAM__: true, type: 'SET_RES', ...res }, '*'));
 
 // Listener para salvar logs automaticamente na pasta do projeto

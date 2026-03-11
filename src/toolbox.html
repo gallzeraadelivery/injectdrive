@@ -293,9 +293,14 @@
 </div>
 
 <div class="toolbox-drag">
-  <div class="header">
-    <div class="header-icon">📷</div>
-    <h2>FakeCam Toolbox</h2>
+  <div class="header" style="justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="header-icon">📷</div>
+      <h2>FakeCam Toolbox</h2>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button onclick="minimizarToolbox()" title="Minimizar" style="padding:4px 8px;font-size:11px;box-shadow:none;">_</button>
+    </div>
   </div>
 </div>
 
@@ -326,13 +331,29 @@
 </section>
 
 <section class="section">
-  <div class="section-title">Fingerprint</div>
+  <div class="section-title">Câmera falsa (Fakecam)</div>
+  <p style="font-size:11px;color:#64748b;margin:0 0 10px 0;">Use <strong>foto</strong>, <strong>GIF animado</strong> ou <strong>vídeo</strong> como câmera do sistema. Quando qualquer site ou app pedir acesso à câmera (<code>getUserMedia</code>), verá o conteúdo que você escolher aqui.</p>
+  <div class="row">
+    <div class="btn-group">
+      <button class="small" onclick="document.getElementById('fakecamImage').click()">📷 Foto</button>
+      <button class="small" onclick="document.getElementById('fakecamGif').click()">🖼 GIF</button>
+      <button class="small" onclick="document.getElementById('fakecamVideo').click()">🎬 Vídeo</button>
+    </div>
+    <input id="fakecamImage" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="setFakecamFromFile(this, 'image')">
+    <input id="fakecamGif" type="file" accept="image/gif" hidden onchange="setFakecamFromFile(this, 'image')">
+    <input id="fakecamVideo" type="file" accept="video/*" hidden onchange="setFakecamFromFile(this, 'video')">
+  </div>
+  <span id="fakecamStatus" class="info-badge" style="margin-top:6px;display:block;">Câmera: padrão (imagem inicial)</span>
+</section>
+
+<section class="section">
+  <div class="section-title">Fingerprint (sempre celular)</div>
+  <p style="font-size:11px;color:#64748b;margin:0 0 10px 0;">Todas as informações do dispositivo aparecem como <strong>celular</strong> (Android ou iPhone) para não identificar como desktop.</p>
   <div class="row">
     <label>UA e resolução do dispositivo</label>
     <div class="btn-group">
       <button class="small" onclick="setPreset('android')">Android</button>
       <button class="small" onclick="setPreset('iphone')">iPhone</button>
-      <button class="small" onclick="setPreset('desktop')">Desktop</button>
     </div>
     <span id="fingerprintInfo" class="info-badge">—</span>
   </div>
@@ -369,6 +390,26 @@
   <div class="row">
     <button id="driveModeBtn" class="small" onclick="toggleDriveMode()" style="min-width:140px;">🚗 Modo Drive: OFF</button>
     <span id="driveModeStatus" class="info-badge">Desativado</span>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-title">Monitor Burp (Modo Drive)</div>
+  <p style="font-size:11px;color:#64748b;margin:0 0 10px 0;">Mostra as últimas alterações feitas pelo <strong>app</strong> quando o <strong>Modo Drive</strong> está ativo (sessão driver, decisão Veriff, etc.).</p>
+  <div class="row">
+    <button class="small" onclick="atualizarBurpMonitor()" style="min-width:140px;">🔄 Atualizar</button>
+  </div>
+  <div class="row">
+    <pre id="burpMonitor" style="max-height:160px;overflow:auto;background:#020617;border-radius:8px;padding:8px;font-size:11px;color:#e5e7eb;border:1px solid rgba(148,163,184,0.4);white-space:pre-wrap;"></pre>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-title">Desativar liveness/doc (H2)</div>
+  <p style="font-size:11px;color:#64748b;margin:0 0 10px 0;">Quando <strong>ativo</strong>: em qualquer resposta JSON altera <code>do_2024_h2_identity_document_active_liveness</code> → <code>parameterValue: "false"</code>, <code>shouldRestrictGalleryUpload</code> e <code>isLiveVerificationEnabled</code> → <code>false</code>, e remove a linha <code>verifyWebviewUrl</code>.</p>
+  <div class="row">
+    <button id="identityLivenessOffBtn" class="small" onclick="toggleIdentityLivenessOff()" style="min-width:160px;">📄 Liveness/doc (H2): OFF</button>
+    <span id="identityLivenessOffStatus" class="info-badge">Desativado</span>
   </div>
 </section>
 
@@ -657,7 +698,27 @@ async function irParaUrlPerfil() {
   window.fakecam.navigateToUrl(url);
 }
 
-/* ===== FAKECAM: ARQUIVOS ===== */
+/* ===== FAKECAM: FOTO/VÍDEO COMO CÂMERA (getUserMedia) ===== */
+function setFakecamFromFile(input, type) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const statusEl = document.getElementById('fakecamStatus');
+    if (type === 'image') {
+      window.fakecam.setImageDataUrl(dataUrl);
+      const isGif = (file.type || '').toLowerCase() === 'image/gif' || (file.name || '').toLowerCase().endsWith('.gif');
+      if (statusEl) statusEl.textContent = isGif ? 'Câmera: GIF — ' + file.name : 'Câmera: foto — ' + file.name;
+    } else {
+      window.fakecam.setVideoDataUrl(dataUrl);
+      if (statusEl) statusEl.textContent = 'Câmera: vídeo — ' + file.name;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ===== FAKECAM: ARQUIVOS (injeção no upload) ===== */
 function fileToDataUrl(input, type) {
   const file = input.files[0];
   if (!file) return;
@@ -860,6 +921,35 @@ async function updateDriveModeUI() {
   }
 }
 
+async function toggleIdentityLivenessOff() {
+  try {
+    const current = await window.fakecam.identityLivenessOffGet();
+    await window.fakecam.identityLivenessOffSet(!current);
+    await updateIdentityLivenessOffUI();
+  } catch (e) {
+    console.warn('Erro ao alternar Liveness/doc (H2):', e);
+  }
+}
+
+async function updateIdentityLivenessOffUI() {
+  try {
+    const enabled = await window.fakecam.identityLivenessOffGet();
+    const btn = document.getElementById('identityLivenessOffBtn');
+    const statusEl = document.getElementById('identityLivenessOffStatus');
+    if (btn) {
+      btn.textContent = enabled ? '📄 Liveness/doc (H2): ON' : '📄 Liveness/doc (H2): OFF';
+      btn.style.background = enabled ? '#10b981' : '';
+      btn.style.color = enabled ? '#fff' : '';
+    }
+    if (statusEl) {
+      statusEl.textContent = enabled ? 'Ativado' : 'Desativado';
+      statusEl.style.color = enabled ? '#10b981' : '#64748b';
+    }
+  } catch (e) {
+    console.warn('Erro ao atualizar UI Liveness/doc (H2):', e);
+  }
+}
+
 /* ===== LOGS DE UPLOAD ===== */
 function closeModalLogs() {
   document.getElementById('modalLogs').classList.remove('show');
@@ -881,6 +971,50 @@ async function salvarLogs() {
   } catch (e) {
     await showModalAlert('Erro', e.message || 'Erro ao salvar logs');
   }
+}
+
+/* ===== MONITOR BURP (MODO DRIVE) ===== */
+async function atualizarBurpMonitor() {
+  const el = document.getElementById('burpMonitor');
+  if (!el) return;
+  el.textContent = 'Carregando alterações do Modo Drive...';
+  try {
+    const result = await window.fakecam.getUploadLogs();
+    if (result.error) {
+      el.textContent = 'Erro: ' + result.error;
+      return;
+    }
+    const logs = (result.logs || []).filter((log) =>
+      log && (log.type === 'DRIVE_SESSION_FLAGS' || log.type === 'DRIVE_DECISION')
+    );
+    if (logs.length === 0) {
+      el.textContent = 'Nenhuma mudança registrada ainda.\nAtive o Modo Drive e faça o fluxo de driver/CNH para ver aqui.';
+      return;
+    }
+    const sorted = logs.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const lines = sorted.map((log) => {
+      const dt = log.timestamp ? new Date(log.timestamp).toLocaleTimeString('pt-BR') : '';
+      const url = log.data && log.data.url ? log.data.url : '';
+      if (log.type === 'DRIVE_SESSION_FLAGS') {
+        const fields = (log.data && log.data.changedFields) || [];
+        return `[${dt}] SESSION_FLAGS\nURL: ${url}\nCampos alterados: ${fields.join(', ') || '(nenhum)'}`;
+      }
+      if (log.type === 'DRIVE_DECISION') {
+        return `[${dt}] DECISION\nURL: ${url}\nDecisão forçada: approved (9001)`;
+      }
+      return `[${dt}] ${log.type}\nURL: ${url}`;
+    });
+    el.textContent = lines.join('\n\n');
+  } catch (e) {
+    el.textContent = 'Erro ao carregar: ' + (e.message || e);
+  }
+}
+
+/* ===== JANELA TOOLBOX ===== */
+function minimizarToolbox() {
+  try {
+    window.fakecam.minimizeToolbox?.();
+  } catch (e) {}
 }
 
 async function atualizarLogs() {
@@ -990,6 +1124,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setInterval(refreshProfileData, 3000);
   await updateMediaInjectionStatus();
   await updateDriveModeUI();
+  await updateIdentityLivenessOffUI();
   setInterval(updateMediaInjectionStatus, 5000);
   window.fakecam.onIdentityCurrent?.((payload) => {
     if (payload.url !== undefined) document.getElementById('profileUrl').value = payload.url || '';

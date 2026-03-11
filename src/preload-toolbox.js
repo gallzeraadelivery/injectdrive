@@ -15,10 +15,19 @@ contextBridge.exposeInMainWorld('fakecam', {
   // Modo Drive: só altera os 6 campos na resposta; desativa injeção de selfie e aprovação Veriff
   driveModeGet: () => ipcRenderer.invoke('drive-mode:get'),
   driveModeSet: (enabled) => ipcRenderer.invoke('drive-mode:set', enabled),
+  // Desativar liveness/doc (H2): parameterValue false, shouldRestrictGalleryUpload/isLiveVerificationEnabled false, remove verifyWebviewUrl
+  identityLivenessOffGet: () => ipcRenderer.invoke('identity-liveness-off:get'),
+  identityLivenessOffSet: (enabled) => ipcRenderer.invoke('identity-liveness-off:set', enabled),
   // Logs de upload
   getUploadLogs: () => ipcRenderer.invoke('logs:getUploadLogs'),
   saveUploadLogs: () => ipcRenderer.invoke('logs:saveUploadLogs'),
   setResolution: (res) => ipcRenderer.send('fakecam:setResolution', res),
+
+  // Logs de mudanças do Burp (Modo Drive / Veriff)
+  getBurpChangesLog: () => ipcRenderer.invoke('burp:getChangesLog'),
+
+  // Janela da toolbox
+  minimizeToolbox: () => ipcRenderer.invoke('toolbox:minimize'),
 
   // Navegar para URL externa
   navigateToUrl: (url) =>

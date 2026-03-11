@@ -1,11 +1,14 @@
 // src/config.js
 module.exports = {
   TCC_URL: 'https://google.com',
-  DEFAULT_IMAGE_PATH: 'C:\\veriff-electra-com menu\\minha-foto.jpg',
+  // Caminho da imagem inicial da fakecam (relativo à pasta do projeto ou absoluto). Use minha-foto.jpg na raiz do projeto.
+  DEFAULT_IMAGE_PATH: 'minha-foto.jpg',
   BASE_W: 1080,
   BASE_H: 2340,
   FPS: 30,
   REQUIRE_PROXY_LOGIN: true,
+  // true = fingerprint sempre como celular (iPhone/Android) para não identificar como desktop
+  FORCE_MOBILE_FINGERPRINT: true,
   // Bypass: loopback + Veriff (TURN/WebRTC). Sem isso, turn*.falcon-*.veriff.me falha DNS (-105) com proxy.
   PROXY_BYPASS: '<-loopback>,.veriff.me,.veriff.com,*veriff.me,*veriff.com',
   // Quando o proxy é local (127.0.0.1, localhost), aceita certificados SSL do proxy (ex.: Burp Suite).

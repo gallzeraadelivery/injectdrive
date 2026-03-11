@@ -4,3 +4,4 @@ logs/*.json
 !logs/.gitkeep
 burp-replacement.*
 burp-replacement-path.txt
+fakecam-assets/

