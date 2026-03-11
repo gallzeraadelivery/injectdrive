@@ -385,7 +385,9 @@ function createToolbox() {
     alwaysOnTop: true,
     transparent: true,
     resizable: false,
-    skipTaskbar: true,
+    // Deixa aparecer na barra de tarefas para que o minimizar funcione
+    // de forma mais natural no Windows (antes ficava "perdido" ao minimizar).
+    skipTaskbar: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload-toolbox.js'),
       contextIsolation: true,
