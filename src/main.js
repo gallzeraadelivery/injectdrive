@@ -391,15 +391,22 @@ function setupMediaInjection(sess) {
 function createToolbox() {
   if (toolboxWin) return;
 
+  const { screen } = require('electron');
+  const work = screen.getPrimaryDisplay().workAreaSize;
+  const winH = Math.min(920, Math.max(520, work.height - 80));
+  const winW = 400;
+
   toolboxWin = new BrowserWindow({
-    width: 400,
-    height: 980,
+    width: winW,
+    height: winH,
     x: 20,
-    y: 60,
+    y: Math.max(20, Math.floor((work.height - winH) / 2)),
     frame: false,
     alwaysOnTop: true,
     transparent: true,
-    resizable: false,
+    resizable: true,
+    minWidth: 360,
+    minHeight: 420,
     // Deixa aparecer na barra de tarefas para que o minimizar funcione
     // de forma mais natural no Windows (antes ficava "perdido" ao minimizar).
     skipTaskbar: false,
@@ -412,18 +419,38 @@ function createToolbox() {
   toolboxWin.loadFile(path.join(__dirname, 'toolbox.html'));
   toolboxWin.show();
   toolboxWin.setAlwaysOnTop(true, 'screen-saver');
+  attachToolboxRestoreHandlers(toolboxWin);
 
   toolboxWin.on('closed', () => {
     toolboxWin = null;
   });
 }
 
-// Minimizar/ocultar a janela da toolbox
+// Minimizar a janela da toolbox (sempreOnTop no Windows às vezes bloqueia minimize)
 ipcMain.handle('toolbox:minimize', () => {
-  if (toolboxWin && !toolboxWin.isDestroyed()) {
+  if (!toolboxWin || toolboxWin.isDestroyed()) return;
+  try {
+    toolboxWin.setAlwaysOnTop(false);
     toolboxWin.minimize();
+  } catch (e) {
+    try { toolboxWin.hide(); } catch (_) {}
   }
 });
+
+// Restaura alwaysOnTop ao voltar da barra de tarefas
+function attachToolboxRestoreHandlers(win) {
+  win.on('restore', () => {
+    if (!win.isDestroyed()) {
+      win.show();
+      win.setAlwaysOnTop(true, 'screen-saver');
+    }
+  });
+  win.on('show', () => {
+    if (!win.isDestroyed() && !win.isMinimized()) {
+      win.setAlwaysOnTop(true, 'screen-saver');
+    }
+  });
+}
 
 /* ================ MAIN WINDOW (por perfil) ================= */
 async function recreateMain(profileId) {
