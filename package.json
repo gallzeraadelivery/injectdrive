@@ -1,0 +1,15 @@
+{
+  "name": "electron-fakecam-ui",
+  "version": "1.0.0",
+  "description": "Fakecam via Canvas + Menu flutuante + Proxy (sem OBS)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node scripts/start-with-veriff-dns.js",
+    "start:raw": "electron ."
+  },
+  "author": "vc",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

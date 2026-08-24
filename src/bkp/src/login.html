@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Login de Proxy</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:">
+<style>
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0f172a; color:#e5e7eb; }
+  .wrap { max-width: 360px; margin: 28px auto; background:#111827; border:1px solid #1f2937; border-radius:14px; padding:16px 16px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  h1 { margin:6px 0 14px; font-size:18px; font-weight:700; }
+  .row { margin-bottom:10px; }
+  label { font-size:12px; opacity:.9; display:block; margin-bottom:6px; }
+  input { width:100%; padding:10px; border-radius:10px; border:1px solid #374151; background:#0b1220; color:#e5e7eb; outline:none; }
+  input:focus { border-color:#60a5fa; }
+  .grid2 { display:grid; grid-template-columns: 1fr 110px; gap:8px; }
+  .btns { display:flex; gap:8px; margin-top:12px; }
+  button { flex:1; background:#1f2937; color:#e5e7eb; border:1px solid #374151; padding:10px; border-radius:10px; font-weight:700; cursor:pointer; }
+  button.primary { background:#2563eb; border-color:#1d4ed8; }
+  button:hover { filter: brightness(1.05); }
+  small { opacity:.7; font-size:12px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Conectar Proxy</h1>
+    <div class="row">
+      <label>Host</label>
+      <input id="host" placeholder="ex: npvevxg9.pr.thordata.net">
+    </div>
+    <div class="row grid2">
+      <div>
+        <label>Usuário</label>
+        <input id="user" placeholder="ex: td-customer-xxxxx">
+      </div>
+      <div>
+        <label>Porta</label>
+        <input id="port" placeholder="ex: 5555">
+      </div>
+    </div>
+    <div class="row">
+      <label>Senha</label>
+      <input id="pass" type="password" placeholder="••••••••">
+    </div>
+    <div class="btns">
+      <button id="skip">Pular</button>
+      <button id="connect" class="primary">Conectar</button>
+    </div>
+    <div class="row"><small>Dica: formato típico host:port:user:pass</small></div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  $('connect').onclick = async () => {
+    const host = $('host').value.trim();
+    const port = $('port').value.trim();
+    const user = $('user').value.trim();
+    const pass = $('pass').value;
+    if (!host || !port) { alert('Informe host e porta'); return; }
+
+    try {
+      await window.proxy.apply({ host, port, user, pass });
+    } catch (e) {
+      alert('Falha ao aplicar proxy: ' + (e?.message || e));
+    }
+  };
+
+  $('skip').onclick = async () => {
+    try { await window.proxy.skip(); } catch (e) {}
+  };
+
+  // atalho: se colar "host:port:user:pass" no campo host, auto-split
+  $('host').addEventListener('input', () => {
+    const v = $('host').value.trim();
+    const parts = v.split(':');
+    if (parts.length === 4) {
+      $('host').value = parts[0];
+      $('port').value = parts[1];
+      $('user').value = parts[2];
+      $('pass').value = parts[3];
+    }
+  });
+</script>
+</body>
+</html>

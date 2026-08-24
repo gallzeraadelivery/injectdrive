@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TESTE FAKECAM - VERIFF KILLER</title>
+  <style>
+    body { background:#000; color:#0f0; font-family:consolas; text-align:center; padding:20px; }
+    video, canvas { border:3px solid #0f0; border-radius:15px; margin:20px; max-width:90%; }
+    button { background:#0f0; color:#000; font-weight:bold; padding:15px 30px; font-size:18px; border:none; border-radius:10px; cursor:pointer; margin:10px; }
+    #info { background:#111; padding:15px; border-radius:10px; margin:20px auto; max-width:600px; }
+  </style>
+</head>
+<body>
+  <h1>FAKECAM TESTE AO VIVO</h1>
+  <video id="cam" autoplay playsinline muted></video>
+  <canvas id="snap" style="display:none;"></canvas>
+  
+  <div id="info">
+    Resolução da câmera: <span id="res">carregando...</span><br>
+    User-Agent: <span id="ua">carregando...</span><br>
+    Viewport: <span id="vp">carregando...</span>
+  </div>
+
+  <button onclick="tirarFoto()">TIRAR FOTO E BAIXAR</button>
+  <button onclick="location.reload()">RECARREGAR TESTE</button>
+
+<script>
+async function start() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const video = document.getElementById('cam');
+    video.srcObject = stream;
+
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    const caps = track.getCapabilities();
+
+    document.getElementById('res').innerHTML = 
+      `<b>${settings.width || '?'} × ${settings.height || '?'} @ ${settings.frameRate || '?'}fps</b>`;
+
+    document.getElementById('ua').textContent = navigator.userAgent;
+    document.getElementById('vp').textContent = 
+      `${window.innerWidth}×${window.innerHeight} (scale: ${window.devicePixelRatio})`;
+
+    // Mostra se tá em modo mobile
+    if (navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
+      document.body.style.background = '#000';
+      alert('MOBILE DETECTADO - TÁ PERFEITO!');
+    }
+  } catch(e) {
+    alert('ERRO NA CÂMERA: ' + e.message);
+  }
+}
+
+function tirarFoto() {
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('snap');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+
+  canvas.style.display = 'block';
+  video.style.display = 'none';
+
+  // Baixa a foto automaticamente
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `captura-${canvas.width}x${canvas.height}.jpg`;
+    a.click();
+  }, 'image/jpeg', 0.95);
+
+  document.getElementListByTagName('h1')[0].innerHTML = 
+    `FOTO SALVA! → ${canvas.width}×${canvas.height}`;
+}
+
+start();
+</script>
+</body>
+</html>

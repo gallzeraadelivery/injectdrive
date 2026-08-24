@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>InjectDrive Toolbox</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.97) 0%, rgba(7, 12, 24, 0.98) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #e2e8f0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    padding: 18px;
+    overflow-y: auto;
+    max-height: 95vh;
+    border-radius: 16px;
+  }
+  /* Barra para arrastar a janela (menu flutuante) */
+  .toolbox-drag {
+    -webkit-app-region: drag;
+    app-region: drag;
+    cursor: move;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: -18px -18px 0 -18px;
+    padding: 18px;
+    border-radius: 16px 16px 0 0;
+  }
+  /* Botões, inputs e clicáveis não arrastam */
+  button, input, select, a, .modal-overlay, .modal-box,
+  [onclick], label[for] {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  .toolbox-drag {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(15, 23, 42, 0.85) 100%);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+    margin-bottom: 16px;
+  }
+  .toolbox-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-bottom: 8px;
+  }
+  .block {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(71, 85, 105, 0.35);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+  .block-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: rgba(30, 41, 59, 0.5);
+    border-bottom: 1px solid rgba(71, 85, 105, 0.25);
+  }
+  .block-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .block-icon.profile { background: rgba(99, 102, 241, 0.25); }
+  .block-icon.camera { background: rgba(236, 72, 153, 0.25); }
+  .block-icon.veriff { background: rgba(245, 158, 11, 0.25); }
+  .block-icon.nav { background: rgba(16, 185, 129, 0.25); }
+  .block-title-wrap { flex: 1; min-width: 0; }
+  .block-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    letter-spacing: -0.01em;
+  }
+  .block-desc {
+    margin: 2px 0 0;
+    font-size: 10px;
+    color: #64748b;
+    line-height: 1.35;
+  }
+  .block-body {
+    padding: 12px 14px 14px;
+  }
+  .sub-block {
+    padding: 10px 0;
+    border-top: 1px solid rgba(71, 85, 105, 0.2);
+  }
+  .sub-block:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+  .sub-block-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  .sub-block-desc {
+    font-size: 10px;
+    color: #64748b;
+    margin: 0 0 8px;
+    line-height: 1.45;
+  }
+  .sub-block-desc code {
+    font-size: 9px;
+    background: rgba(71, 85, 105, 0.35);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .info-badge {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 0;
+    padding: 6px 10px;
+    background: rgba(71, 85, 105, 0.25);
+    border-radius: 6px;
+    display: inline-block;
+    flex: 1;
+    min-width: 0;
+  }
+  .info-badge.block-full {
+    display: block;
+    width: 100%;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3) !important;
+  }
+  button.btn-obs {
+    background: rgba(236, 72, 153, 0.35) !important;
+    border: 1px solid rgba(236, 72, 153, 0.45);
+  }
+  button.btn-obs:hover {
+    background: rgba(236, 72, 153, 0.55) !important;
+  }
+  button.btn-toggle-on {
+    background: #10b981 !important;
+    color: #fff !important;
+  }
+  .preview-video {
+    width: 100%;
+    max-height: 130px;
+    border-radius: 10px;
+    background: #000;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+    margin-top: 8px;
+  }
+  .monitor-pre {
+    max-height: 140px;
+    overflow: auto;
+    background: #020617;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 10px;
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .sliders-grid {
+    display: grid;
+    gap: 8px;
+  }
+  .slider-row label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .slider-row label span {
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 400;
+  }
+  button.btn-minimize {
+    padding: 4px 10px;
+    font-size: 12px;
+    box-shadow: none;
+    background: rgba(71, 85, 105, 0.4);
+    border-radius: 6px;
+  }
+  button.preset-btn.active {
+    background: rgba(99, 102, 241, 0.55) !important;
+    border: 1px solid rgba(99, 102, 241, 0.7);
+    color: #fff;
+  }
+  .header-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+  .header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    background: linear-gradient(180deg, #fff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .row { margin: 10px 0; }
+  .row:first-child { margin-top: 0; }
+  label {
+    font-size: 12px;
+    color: #94a3b8;
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  input, select {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+    background: rgba(15, 23, 42, 0.6);
+    color: #f1f5f9;
+    width: 100%;
+    font-size: 13px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  }
+  input[type="range"] {
+    padding: 0;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(71, 85, 105, 0.4);
+    border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    margin-top: -5px;
+  }
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #6366f1;
+    cursor: pointer;
+  }
+  button {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  }
+  button.small {
+    padding: 8px 14px;
+    font-size: 12px;
+    background: rgba(71, 85, 105, 0.5);
+    box-shadow: none;
+  }
+  button.small:hover {
+    background: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+  }
+  button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  }
+  .btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .btn-shortcut {
+    text-align: left;
+    justify-content: flex-start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-box {
+    background: linear-gradient(160deg, rgba(22, 28, 45, 0.98) 0%, rgba(15, 20, 35, 0.99) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 14px;
+    padding: 24px;
+    min-width: 300px;
+    max-width: 400px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  }
+  .modal-box h3 { margin: 0 0 16px; font-size: 16px; color: #e2e8f0; }
+  .modal-box input { margin-bottom: 16px; }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-btns button.cancel {
+    background: rgba(71, 85, 105, 0.5);
+  }
+  .modal-btns button.cancel:hover {
+    background: rgba(71, 85, 105, 0.8);
+  }
+  .modal-proxy-box { min-width: 320px; }
+</style>
+</head>
+<body>
+
+<!-- Modal para input (Novo / Renomear) -->
+<div id="modalInput" class="modal-overlay" onclick="if(event.target===this)closeModalInput()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3 id="modalInputTitle">Título</h3>
+    <input type="text" id="modalInputField" placeholder="">
+    <div class="modal-btns">
+      <button class="small cancel" onclick="closeModalInput()">Cancelar</button>
+      <button class="small" id="modalInputOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para confirmar (Excluir / Limpar) -->
+<div id="modalConfirm" class="modal-overlay" onclick="if(event.target===this)(document.getElementById('modalConfirmNo')||document.getElementById('modalConfirmYes'))?.click()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3 id="modalConfirmTitle">Confirmar?</h3>
+    <p id="modalConfirmMsg" style="margin:0 0 16px;color:#94a3b8;font-size:14px;"></p>
+    <div class="modal-btns" id="modalConfirmBtns">
+      <button class="small cancel" id="modalConfirmNo">Não</button>
+      <button class="small" id="modalConfirmYes">Sim</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Trocar proxy -->
+<div id="modalProxy" class="modal-overlay" onclick="if(event.target===this)closeModalProxy()">
+  <div class="modal-box modal-proxy-box" onclick="event.stopPropagation()">
+    <h3>Trocar proxy</h3>
+    <p style="margin:0 0 12px;color:#94a3b8;font-size:12px;">O proxy será aplicado sem recarregar. As próximas navegações usarão o novo proxy.</p>
+    <div class="row">
+      <label>Host</label>
+      <input type="text" id="proxyHost" placeholder="ex: npvevxg9.pr.thordata.net">
+    </div>
+    <div class="row" style="display:grid;grid-template-columns:1fr 90px;gap:8px;">
+      <div>
+        <label>Usuário</label>
+        <input type="text" id="proxyUser" placeholder="ex: td-customer-xxxxx">
+      </div>
+      <div>
+        <label>Porta</label>
+        <input type="text" id="proxyPort" placeholder="5555">
+      </div>
+    </div>
+    <div class="row">
+      <label>Senha</label>
+      <input type="password" id="proxyPass" placeholder="••••••••">
+    </div>
+    <div class="modal-btns" style="margin-top:16px;gap:8px;">
+      <button class="small cancel" onclick="closeModalProxy()">Cancelar</button>
+      <button class="small cancel" onclick="aplicarProxySem()">Remover proxy</button>
+      <button class="small" id="proxyApplyBtn">Aplicar</button>
+    </div>
+    <p style="margin:12px 0 0;font-size:11px;color:#64748b;">💡 Cole no Host: host:port:user:pass para preencher</p>
+  </div>
+</div>
+
+<!-- Modal Ver fingerprint -->
+<div id="modalFingerprint" class="modal-overlay" onclick="if(event.target===this)closeModalFingerprint()">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:480px;max-height:85vh;overflow-y:auto;">
+    <h3>Fingerprint do perfil</h3>
+    <pre id="fingerprintContent" style="margin:0;padding:12px;background:rgba(0,0,0,0.3);border-radius:8px;font-size:11px;line-height:1.5;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:#94a3b8;"></pre>
+    <div class="modal-btns" style="margin-top:12px;">
+      <button class="small" onclick="closeModalFingerprint()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ver Logs de Upload -->
+<div id="modalLogs" class="modal-overlay" onclick="if(event.target===this)closeModalLogs()">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:700px;max-height:85vh;overflow-y:auto;">
+    <h3>Logs de Upload</h3>
+    <p style="margin:0 0 12px;color:#94a3b8;font-size:12px;">Últimas requisições de upload interceptadas</p>
+    <div id="logsContent" style="margin:0;padding:12px;background:rgba(0,0,0,0.3);border-radius:8px;font-size:11px;line-height:1.5;color:#94a3b8;max-height:60vh;overflow-y:auto;">
+      <div style="text-align:center;padding:20px;color:#64748b;">Carregando logs...</div>
+    </div>
+    <div class="modal-btns" style="margin-top:12px;">
+      <button class="small cancel" onclick="atualizarLogs()">🔄 Atualizar</button>
+      <button class="small cancel" onclick="salvarLogs()">💾 Salvar em Arquivo</button>
+      <button class="small" onclick="closeModalLogs()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toolbox-drag">
+  <div class="header" style="justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="header-icon">📷</div>
+      <div>
+        <h2 style="margin:0;">InjectDrive</h2>
+        <p style="margin:2px 0 0;font-size:10px;color:#64748b;font-weight:400;-webkit-text-fill-color:#64748b;background:none;">Toolbox de controle</p>
+      </div>
+    </div>
+    <button class="btn-minimize" onclick="minimizarToolbox()" title="Minimizar">_</button>
+  </div>
+</div>
+
+<div class="toolbox-content">
+
+<!-- BLOCO 1: Perfil & Sessão -->
+<article class="block">
+  <header class="block-header">
+    <div class="block-icon profile">👤</div>
+    <div class="block-title-wrap">
+      <h3 class="block-title">Perfil &amp; Sessão</h3>
+      <p class="block-desc">Identidade, fingerprint e conexão de rede</p>
+    </div>
+  </header>
+  <div class="block-body">
+    <div class="sub-block">
+      <div class="sub-block-title">Perfis</div>
+      <label for="profiles">Selecione o perfil</label>
+      <select id="profiles"></select>
+      <div class="btn-group">
+        <button class="small" onclick="novoPerfil()">Novo</button>
+        <button class="small" onclick="renomearPerfil()">Renomear</button>
+        <button class="small" onclick="excluirPerfil()">Excluir</button>
+        <button class="small" onclick="limparStorage()">Limpar cache</button>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">URL do perfil</div>
+      <label for="profileUrl">Abre ao trocar ou iniciar perfil</label>
+      <input id="profileUrl" type="url" placeholder="https://exemplo.com">
+      <div class="btn-group">
+        <button class="small" onclick="salvarUrlPerfil()">Salvar URL</button>
+        <button class="small btn-primary" onclick="irParaUrlPerfil()">Ir agora</button>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Fingerprint</div>
+      <p class="sub-block-desc">Simule <strong>Android</strong>, <strong>iPhone</strong> ou <strong>Desktop</strong>. Locale segue o <strong>proxy</strong> (país/fuso); sem proxy → <strong>USA</strong>.</p>
+      <label>Preset do dispositivo</label>
+      <div class="btn-group" id="presetButtons">
+        <button class="small preset-btn" data-preset="android" onclick="setPreset('android')">Android</button>
+        <button class="small preset-btn" data-preset="iphone" onclick="setPreset('iphone')">iPhone</button>
+        <button class="small preset-btn" data-preset="desktop" onclick="setPreset('desktop')">Desktop</button>
+      </div>
+      <span id="fingerprintInfo" class="info-badge block-full">—</span>
+      <div class="btn-group" style="margin-top:8px;">
+        <button class="small" onclick="novoFingerprint()" style="flex:1;" title="Gera novo fingerprint único">🔄 Novo fingerprint</button>
+        <button class="small" onclick="verFingerprint()" style="flex:1;" title="Ver dados completos">👁 Ver dados</button>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Cookies</div>
+      <p class="sub-block-desc">Formato <strong>AdsPower</strong> (JSON). Importar <strong>substitui</strong> os cookies do perfil atual.</p>
+      <div class="btn-group">
+        <button class="small" onclick="baixarCookies()" style="flex:1;">⬇️ Baixar cookies</button>
+        <button class="small btn-primary" onclick="importarCookies()" style="flex:1;">⬆️ Importar cookies</button>
+      </div>
+      <span id="cookiesStatus" class="info-badge block-full">Cookies: —</span>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Proxy</div>
+      <button class="small" onclick="abrirModalProxy()" style="width:100%;">🔐 Configurar proxy</button>
+    </div>
+  </div>
+</article>
+
+<!-- BLOCO 2: Câmera -->
+<article class="block">
+  <header class="block-header">
+    <div class="block-icon camera">📹</div>
+    <div class="block-title-wrap">
+      <h3 class="block-title">Câmera</h3>
+      <p class="block-desc">Fonte exibida quando sites pedem webcam</p>
+    </div>
+  </header>
+  <div class="block-body">
+    <div class="sub-block">
+      <div class="sub-block-title">Fonte da câmera</div>
+      <p class="sub-block-desc">Foto, GIF, vídeo ou <strong>OBS Virtual Camera</strong>. Sites com <code>getUserMedia</code> veem o que você escolher.</p>
+      <div class="btn-group">
+        <button class="small" onclick="document.getElementById('fakecamImage').click()">📷 Foto</button>
+        <button class="small" onclick="document.getElementById('fakecamGif').click()">🖼 GIF</button>
+        <button class="small" onclick="document.getElementById('fakecamVideo').click()">🎬 Vídeo</button>
+        <button class="small btn-obs" id="btnObsCamera" onclick="connectObsCamera()">📡 OBS</button>
+      </div>
+      <input id="fakecamImage" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="setFakecamFromFile(this, 'image')">
+      <input id="fakecamGif" type="file" accept="image/gif" hidden onchange="setFakecamFromFile(this, 'image')">
+      <input id="fakecamVideo" type="file" accept="video/*" hidden onchange="setFakecamFromFile(this, 'video')">
+      <span id="fakecamStatus" class="info-badge block-full">Câmera: padrão (imagem inicial)</span>
+      <div id="obsPreviewWrap" style="display:none;">
+        <video id="obsPreview" class="preview-video" autoplay playsinline muted></video>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Ajustes de enquadramento</div>
+      <div class="sliders-grid">
+        <div class="slider-row">
+          <label for="zoom">Zoom <span id="zoomVal">1.0</span></label>
+          <input id="zoom" type="range" min="0.5" max="3" step="0.05" value="1" oninput="document.getElementById('zoomVal').textContent=parseFloat(this.value).toFixed(2);sendParams()">
+        </div>
+        <div class="slider-row">
+          <label for="posX">Posição X <span id="posXVal">0</span></label>
+          <input id="posX" type="range" min="-500" max="500" step="10" value="0" oninput="document.getElementById('posXVal').textContent=this.value;sendParams()">
+        </div>
+        <div class="slider-row">
+          <label for="posY">Posição Y <span id="posYVal">0</span></label>
+          <input id="posY" type="range" min="-500" max="500" step="10" value="0" oninput="document.getElementById('posYVal').textContent=this.value;sendParams()">
+        </div>
+        <div class="slider-row">
+          <label for="rotate">Rotação <span id="rotateVal">0°</span></label>
+          <input id="rotate" type="range" min="-180" max="180" step="5" value="0" oninput="document.getElementById('rotateVal').textContent=this.value+'°';sendParams()">
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px;margin-bottom:0;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+          <input type="checkbox" id="flipH" onchange="sendParams()">
+          Espelhar horizontal
+        </label>
+      </div>
+    </div>
+    <div class="sub-block">
+      <button class="btn-primary" onclick="testarCam()" style="width:100%;">🧪 Testar câmera</button>
+    </div>
+  </div>
+</article>
+
+<!-- BLOCO 3: Veriff / Bypass -->
+<article class="block">
+  <header class="block-header">
+    <div class="block-icon veriff">🛡</div>
+    <div class="block-title-wrap">
+      <h3 class="block-title">Veriff / Bypass</h3>
+      <p class="block-desc">Upload, modo drive e alterações de resposta</p>
+    </div>
+  </header>
+  <div class="block-body">
+    <div class="sub-block">
+      <div class="sub-block-title">Injetar imagem no upload</div>
+      <p class="sub-block-desc">Substitui em <strong>fetch/XHR</strong> + <strong>Burp</strong> (<code>burp-replacement.jpg</code>). Proxy: <code>127.0.0.1:8080</code>.</p>
+      <button onclick="document.getElementById('img').click()" style="width:100%;">📷 Escolher imagem</button>
+      <input id="img" type="file" accept="image/*" hidden onchange="fileToDataUrl(this,'image')">
+      <div class="btn-group" style="margin-top:8px;">
+        <button class="small" onclick="configMediaInjection('image')" title="Diálogo de arquivo">🔧 Por arquivo</button>
+        <button class="small" onclick="clearMediaInjection()" title="Desativar">❌ Limpar</button>
+        <button class="small" onclick="verLogsUpload()">📋 Logs</button>
+      </div>
+      <span id="mediaInjectionStatus" class="info-badge block-full">Nenhuma imagem</span>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Modo Drive</div>
+      <p class="sub-block-desc">Altera 6 campos na resposta e desativa injeção de selfie / aprovação Veriff.</p>
+      <div class="status-row">
+        <button id="driveModeBtn" class="small" onclick="toggleDriveMode()" style="min-width:150px;">🚗 Modo Drive: OFF</button>
+        <span id="driveModeStatus" class="info-badge">Desativado</span>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Liveness / Documento (H2)</div>
+      <p class="sub-block-desc">Força <code>parameterValue: false</code>, desativa gallery/liveness e remove <code>verifyWebviewUrl</code>.</p>
+      <div class="status-row">
+        <button id="identityLivenessOffBtn" class="small" onclick="toggleIdentityLivenessOff()" style="min-width:170px;">📄 Liveness H2: OFF</button>
+        <span id="identityLivenessOffStatus" class="info-badge">Desativado</span>
+      </div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">Monitor Burp (Modo Drive)</div>
+      <button class="small" onclick="atualizarBurpMonitor()" style="width:100%;margin-bottom:8px;">🔄 Atualizar monitor</button>
+      <pre id="burpMonitor" class="monitor-pre">Nenhuma alteração registrada ainda.</pre>
+    </div>
+  </div>
+</article>
+
+<!-- BLOCO 4: Navegação -->
+<article class="block">
+  <header class="block-header">
+    <div class="block-icon nav">🧭</div>
+    <div class="block-title-wrap">
+      <h3 class="block-title">Navegação</h3>
+      <p class="block-desc">Atalhos e URLs temporárias</p>
+    </div>
+  </header>
+  <div class="block-body">
+    <div class="sub-block">
+      <div class="sub-block-title">Links rápidos</div>
+      <label>Abrir na janela do perfil</label>
+      <div id="shortcutsContainer" class="btn-group" style="flex-direction:column;align-items:stretch;"></div>
+    </div>
+    <div class="sub-block">
+      <div class="sub-block-title">URL temporária</div>
+      <label for="url">Não salva no perfil</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="url" placeholder="https://outro-site.com" style="flex:1;">
+        <button class="small btn-primary" onclick="irUrl()">Ir</button>
+      </div>
+    </div>
+  </div>
+</article>
+
+</div><!-- .toolbox-content -->
+
+<script>
+/* ===== MODAIS (substituem prompt/confirm em janela frameless) ===== */
+let _inputModalResolve = null;
+function showModalInput(title, placeholder, defaultValue) {
+  return new Promise((resolve) => {
+    _inputModalResolve = resolve;
+    const overlay = document.getElementById('modalInput');
+    const field = document.getElementById('modalInputField');
+    const okBtn = document.getElementById('modalInputOk');
+    document.getElementById('modalInputTitle').textContent = title;
+    field.placeholder = placeholder || '';
+    field.value = defaultValue != null ? String(defaultValue) : '';
+    overlay.classList.add('show');
+    setTimeout(() => field.focus(), 50);
+    const finish = (val) => { overlay.classList.remove('show'); _inputModalResolve = null; resolve(val); };
+    okBtn.onclick = () => finish(field.value.trim());
+    field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(field.value.trim()); } if (e.key === 'Escape') finish(null); };
+  });
+}
+function closeModalInput() {
+  document.getElementById('modalInput').classList.remove('show');
+  if (_inputModalResolve) { _inputModalResolve(null); _inputModalResolve = null; }
+}
+function showModalConfirm(title, message) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('modalConfirm');
+    const btns = document.getElementById('modalConfirmBtns');
+    document.getElementById('modalConfirmTitle').textContent = title;
+    document.getElementById('modalConfirmMsg').textContent = message;
+    btns.innerHTML = '<button class="small cancel" id="modalConfirmNo">Não</button><button class="small" id="modalConfirmYes">Sim</button>';
+    overlay.classList.add('show');
+    document.getElementById('modalConfirmYes').onclick = () => { overlay.classList.remove('show'); resolve(true); };
+    document.getElementById('modalConfirmNo').onclick = () => { overlay.classList.remove('show'); resolve(false); };
+  });
+}
+function showModalAlert(title, message) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('modalConfirm');
+    const btns = document.getElementById('modalConfirmBtns');
+    document.getElementById('modalConfirmTitle').textContent = title;
+    document.getElementById('modalConfirmMsg').textContent = message;
+    btns.innerHTML = '<button class="small" id="modalConfirmYes">OK</button>';
+    overlay.classList.add('show');
+    document.getElementById('modalConfirmYes').onclick = () => { overlay.classList.remove('show'); resolve(); };
+  });
+}
+
+/* ===== TROCAR PROXY ===== */
+async function abrirModalProxy() {
+  const modal = document.getElementById('modalProxy');
+  const host = document.getElementById('proxyHost');
+  const port = document.getElementById('proxyPort');
+  const user = document.getElementById('proxyUser');
+  const pass = document.getElementById('proxyPass');
+  try {
+    const p = await window.fakecam.getProxy();
+    host.value = p.host || '';
+    port.value = p.port || '';
+    user.value = p.user || '';
+    pass.value = '';
+  } catch (e) {}
+  modal.classList.add('show');
+  setTimeout(() => host.focus(), 50);
+}
+function closeModalProxy() {
+  document.getElementById('modalProxy').classList.remove('show');
+}
+async function aplicarProxy() {
+  const host = document.getElementById('proxyHost').value.trim();
+  const port = document.getElementById('proxyPort').value.trim();
+  const user = document.getElementById('proxyUser').value.trim();
+  const pass = document.getElementById('proxyPass').value;
+  if (!host || !port) {
+    showModalAlert('Aviso', 'Informe host e porta.');
+    return;
+  }
+  try {
+    await window.fakecam.changeProxy({ host, port, user, pass });
+    closeModalProxy();
+    showModalAlert('Proxy', 'Proxy aplicado.');
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Falha ao aplicar proxy.');
+  }
+}
+async function aplicarProxySem() {
+  try {
+    await window.fakecam.changeProxy({ host: '', port: '', user: '', pass: '' });
+    closeModalProxy();
+    showModalAlert('Proxy', 'Proxy removido.');
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Falha ao remover proxy.');
+  }
+}
+function initModalProxy() {
+  document.getElementById('proxyApplyBtn').onclick = aplicarProxy;
+  document.getElementById('proxyHost').addEventListener('input', () => {
+    const v = document.getElementById('proxyHost').value.trim();
+    const parts = v.split(':');
+    if (parts.length === 4) {
+      document.getElementById('proxyHost').value = parts[0];
+      document.getElementById('proxyPort').value = parts[1];
+      document.getElementById('proxyUser').value = parts[2];
+      document.getElementById('proxyPass').value = parts[3];
+    }
+  });
+}
+
+/* ===== PERFIS ===== */
+async function refreshProfiles() {
+  const { list, currentId } = await window.fakecam.profilesList();
+  const sel = document.getElementById('profiles');
+  sel.innerHTML = '';
+  list.forEach((p) => {
+    const opt = new Option(p.name || p.id.slice(0, 8), p.id);
+    if (p.id === currentId) opt.selected = true;
+    sel.add(opt);
+  });
+}
+
+async function novoPerfil() {
+  const nome = await showModalInput('Novo perfil', 'Digite o nome', '');
+  if (nome === null || nome === undefined) return;
+  try {
+    await window.fakecam.identityNew(nome);
+    await refreshProfiles();
+    await refreshProfileData();
+  } catch (e) {
+    showModalAlert('Erro', 'Erro ao criar perfil: ' + (e?.message || e));
+  }
+}
+
+async function renomearPerfil() {
+  const sel = document.getElementById('profiles');
+  const id = sel.value;
+  if (!id) {
+    showModalAlert('Aviso', 'Selecione um perfil.');
+    return;
+  }
+  const atual = sel.options[sel.selectedIndex].text;
+  const nome = await showModalInput('Renomear perfil', 'Novo nome', atual);
+  if (nome === null || nome === undefined) return;
+  if (!String(nome).trim()) {
+    showModalAlert('Aviso', 'O nome não pode ficar vazio.');
+    return;
+  }
+  try {
+    await window.fakecam.profilesRename(id, nome);
+    await refreshProfiles();
+  } catch (e) {
+    showModalAlert('Erro', 'Erro ao renomear: ' + (e?.message || e));
+  }
+}
+
+async function excluirPerfil() {
+  const sel = document.getElementById('profiles');
+  const id = sel.value;
+  if (!id) {
+    showModalAlert('Aviso', 'Selecione um perfil.');
+    return;
+  }
+  const ok = await showModalConfirm('Excluir perfil', 'Excluir este perfil? (não é possível apagar o último)');
+  if (!ok) return;
+  try {
+    await window.fakecam.profilesDelete(id);
+    await refreshProfiles();
+    await refreshProfileData();
+  } catch (e) {
+    showModalAlert('Erro', 'Erro ao excluir: ' + (e?.message || e));
+  }
+}
+
+async function limparStorage() {
+  const id = document.getElementById('profiles').value;
+  if (!id) {
+    showModalConfirm('Aviso', 'Selecione um perfil.');
+    return;
+  }
+  const ok = await showModalConfirm('Limpar storage', 'Limpar cookies e cache deste perfil?');
+  if (!ok) return;
+  try {
+    await window.fakecam.identityClearStorage();
+    await refreshProfileData();
+  } catch (e) {
+    showModalAlert('Erro', 'Erro ao limpar storage: ' + (e?.message || e));
+  }
+}
+
+// troca de perfil pelo select
+document.getElementById('profiles').addEventListener('change', async (e) => {
+  const id = e.target.value;
+  if (!id) return;
+  try {
+    await window.fakecam.profilesSwitch(id);
+    await refreshProfiles();
+    await refreshProfileData();
+  } catch (e) {
+    showModalAlert('Erro', 'Erro ao trocar perfil: ' + (e?.message || e));
+    await refreshProfiles();
+  }
+});
+
+/* ===== URL E FINGERPRINT DO PERFIL ===== */
+async function refreshProfileData() {
+  try {
+    const data = await window.fakecam.identityGet();
+    document.getElementById('profileUrl').value = data.url || '';
+    const fp = data.fingerprint || {};
+    const preset = fp.preset || 'iphone';
+    const res = fp.width && fp.height ? `${fp.width}×${fp.height}` : '—';
+    document.getElementById('fingerprintInfo').textContent = `${preset} • ${res}`;
+    updatePresetButtons(preset);
+  } catch (e) {}
+}
+
+function updatePresetButtons(preset) {
+  document.querySelectorAll('.preset-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.preset === preset);
+  });
+}
+
+async function salvarUrlPerfil() {
+  const id = document.getElementById('profiles').value;
+  if (!id) { showModalAlert('Aviso', 'Selecione um perfil.'); return; }
+  const url = document.getElementById('profileUrl').value.trim();
+  await window.fakecam.profilesUpdateUrl(id, url);
+  await refreshProfileData();
+}
+
+async function irParaUrlPerfil() {
+  const url = document.getElementById('profileUrl').value.trim();
+  if (!url) { showModalAlert('Aviso', 'Informe a URL do perfil.'); return; }
+  const id = document.getElementById('profiles').value;
+  if (id) await window.fakecam.profilesUpdateUrl(id, url);
+  window.fakecam.navigateToUrl(url);
+}
+
+/* ===== FAKECAM: FOTO/VÍDEO COMO CÂMERA (getUserMedia) ===== */
+let obsPreviewStream = null;
+
+function isObsVirtualCamera(label) {
+  const l = String(label || '').trim().toLowerCase();
+  if (!l) return false;
+  if (/droidcam|manycam|snap camera|xsplit|epoc cam|iriun|camo/i.test(l)) return false;
+  if (/obs virtual camera|obs-camera|^obs virtual/i.test(l)) return true;
+  return /\bobs\b/.test(l) && /virtual|camera/.test(l);
+}
+
+function findObsDevice(devices) {
+  const list = Array.isArray(devices) ? devices : [];
+  const ranked = list
+    .filter(d => d && d.deviceId)
+    .map(d => {
+      const label = d.label || '';
+      const l = label.toLowerCase();
+      let score = 0;
+      if (/obs virtual camera/i.test(l)) score = 100;
+      else if (/obs-camera/i.test(l)) score = 90;
+      else if (/obs virtual/i.test(l)) score = 80;
+      else if (isObsVirtualCamera(label)) score = 60;
+      if (/droidcam|manycam|snap camera/i.test(l)) score = -100;
+      return { device: d, score };
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.device || null;
+}
+
+async function openObsPreviewStream(deviceId) {
+  const attempts = [
+    { video: { deviceId: { exact: deviceId } }, audio: false },
+    { video: { deviceId: { ideal: deviceId } }, audio: false },
+  ];
+  let lastErr = null;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      lastErr = e;
+      if (e.name !== 'OverconstrainedError' && e.name !== 'ConstraintNotSatisfiedError') throw e;
+    }
+  }
+  throw lastErr;
+}
+
+function stopObsPreview() {
+  if (obsPreviewStream) {
+    obsPreviewStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+    obsPreviewStream = null;
+  }
+  const preview = document.getElementById('obsPreview');
+  const wrap = document.getElementById('obsPreviewWrap');
+  if (preview) preview.srcObject = null;
+  if (wrap) wrap.style.display = 'none';
+}
+
+async function connectObsCamera() {
+  const statusEl = document.getElementById('fakecamStatus');
+  const btn = document.getElementById('btnObsCamera');
+  if (btn) { btn.disabled = true; btn.textContent = 'Conectando...'; }
+  if (statusEl) statusEl.textContent = 'Câmera: conectando OBS...';
+
+  try {
+    const listed = await window.fakecam.listVideoDevices();
+    if (!listed?.ok) {
+      if (statusEl) statusEl.textContent = 'Câmera: erro — ' + (listed?.error || 'não foi possível listar dispositivos');
+      return;
+    }
+    const obsDevice = listed.obsDeviceId
+      ? { deviceId: listed.obsDeviceId, label: listed.obsLabel || 'OBS Virtual Camera' }
+      : findObsDevice(listed.devices || []);
+    if (!obsDevice) {
+      const names = (listed.devices || []).map(d => d.label).filter(Boolean).join(', ');
+      if (statusEl) {
+        statusEl.textContent = names
+          ? 'Câmera: OBS não encontrada. Detectadas: ' + names + '. Inicie a Câmera Virtual no OBS.'
+          : 'Câmera: OBS não encontrada — inicie a Câmera Virtual no OBS Studio';
+      }
+      return;
+    }
+
+    const result = await window.fakecam.useObsCamera(null);
+    if (!result?.ok) {
+      if (statusEl) statusEl.textContent = 'Câmera: OBS — ' + (result?.error || 'falha ao conectar');
+      return;
+    }
+    if (!isObsVirtualCamera(result.label)) {
+      if (statusEl) statusEl.textContent = 'Câmera: conectou em "' + (result.label || 'outra') + '" — OBS não está ativo';
+      return;
+    }
+
+    stopObsPreview();
+    try {
+      obsPreviewStream = await openObsPreviewStream(obsDevice.deviceId);
+      const previewLabel = obsPreviewStream.getVideoTracks()[0]?.label || '';
+      if (!isObsVirtualCamera(previewLabel)) {
+        stopObsPreview();
+        if (statusEl) statusEl.textContent = 'Câmera: preview pegou "' + (previewLabel || 'outra câmera') + '" — verifique o OBS';
+        return;
+      }
+      const preview = document.getElementById('obsPreview');
+      const wrap = document.getElementById('obsPreviewWrap');
+      if (preview) preview.srcObject = obsPreviewStream;
+      if (wrap) wrap.style.display = 'block';
+    } catch (_) {}
+
+    const dims = result.width && result.height ? ` (${result.width}×${result.height})` : '';
+    if (statusEl) statusEl.textContent = 'Câmera: OBS — ' + (result.label || obsDevice.label) + dims;
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Câmera: erro — ' + (e.message || e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📡 OBS'; }
+  }
+}
+
+function setFakecamFromFile(input, type) {
+  stopObsPreview();
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const statusEl = document.getElementById('fakecamStatus');
+    if (type === 'image') {
+      window.fakecam.setImageDataUrl(dataUrl);
+      const isGif = (file.type || '').toLowerCase() === 'image/gif' || (file.name || '').toLowerCase().endsWith('.gif');
+      if (statusEl) statusEl.textContent = isGif ? 'Câmera: GIF — ' + file.name : 'Câmera: foto — ' + file.name;
+    } else {
+      window.fakecam.setVideoDataUrl(dataUrl);
+      if (statusEl) statusEl.textContent = 'Câmera: vídeo — ' + file.name;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ===== FAKECAM: ARQUIVOS (injeção no upload) ===== */
+function fileToDataUrl(input, type) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    if (type === 'image') {
+      window.fakecam.setMediaForInjectionFromDataUrl('image', dataUrl, file.name).then((r) => {
+        if (r?.success) {
+          const el = document.getElementById('mediaInjectionStatus');
+          if (el) el.textContent = 'Imagem para upload: ' + file.name;
+        }
+      }).catch(() => {});
+    } else {
+      window.fakecam.setMediaForInjectionFromDataUrl('video', dataUrl, file.name).then((r) => {
+        if (r?.success) {
+          const el = document.getElementById('mediaInjectionStatus');
+          if (el) el.textContent = 'Vídeo: ' + file.name;
+        }
+      }).catch(() => {});
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ===== FAKECAM: CONTROLES (zoom, X, Y, rotação, flip) ===== */
+function sendParams() {
+  const zoom = parseFloat(document.getElementById('zoom').value);
+  const x = parseInt(document.getElementById('posX').value, 10);
+  const y = parseInt(document.getElementById('posY').value, 10);
+  const rotate = parseInt(document.getElementById('rotate').value, 10) || 0;
+  const flipH = document.getElementById('flipH').checked;
+
+  window.fakecam.updateParams({ zoom, x, y, rotate, flipH });
+}
+
+/* ===== LINKS RÁPIDOS (config.js → SHORTCUTS) ===== */
+async function refreshShortcuts() {
+  const container = document.getElementById('shortcutsContainer');
+  if (!container) return;
+  try {
+    const list = await window.fakecam.getShortcuts();
+    container.innerHTML = '';
+    list.forEach((item) => {
+      if (!item || !item.url) return;
+      const btn = document.createElement('button');
+      btn.className = 'small btn-shortcut';
+      btn.textContent = item.label || item.url;
+      btn.title = item.url;
+      btn.onclick = () => window.fakecam.navigateToUrl(item.url);
+      container.appendChild(btn);
+    });
+  } catch (e) {}
+}
+
+/* ===== NAVEGAÇÃO ===== */
+function irUrl() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) {
+    showModalAlert('Aviso', 'Informe uma URL');
+    return;
+  }
+  window.fakecam.navigateToUrl(url);
+}
+
+/* ===== COOKIES (AdsPower JSON) ===== */
+async function baixarCookies() {
+  const statusEl = document.getElementById('cookiesStatus');
+  try {
+    if (statusEl) statusEl.textContent = 'Cookies: exportando...';
+    const r = await window.fakecam.cookiesExport();
+    if (r?.canceled) {
+      if (statusEl) statusEl.textContent = 'Cookies: export cancelado';
+      return;
+    }
+    if (!r?.ok) {
+      if (statusEl) statusEl.textContent = 'Cookies: erro — ' + (r?.error || 'falha');
+      showModalAlert('Cookies', r?.error || 'Falha ao exportar cookies.');
+      return;
+    }
+    if (statusEl) statusEl.textContent = `Cookies: exportados ${r.count} → ${r.file}`;
+    showModalAlert('Cookies', `Exportado com sucesso.\n\n${r.count} cookies\n${r.file}`);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Cookies: erro — ' + (e.message || e);
+    showModalAlert('Erro', e?.message || 'Falha ao exportar cookies.');
+  }
+}
+
+async function importarCookies() {
+  const statusEl = document.getElementById('cookiesStatus');
+  const ok = await showModalConfirm(
+    'Importar cookies',
+    'Isso SUBSTITUI todos os cookies do perfil atual pelos do arquivo (formato AdsPower). Continuar?'
+  );
+  if (!ok) return;
+  try {
+    if (statusEl) statusEl.textContent = 'Cookies: importando...';
+    const r = await window.fakecam.cookiesImport();
+    if (r?.canceled) {
+      if (statusEl) statusEl.textContent = 'Cookies: import cancelado';
+      return;
+    }
+    if (!r?.ok) {
+      if (statusEl) statusEl.textContent = 'Cookies: erro — ' + (r?.error || 'falha');
+      showModalAlert('Cookies', r?.error || 'Falha ao importar cookies.');
+      return;
+    }
+    const failTxt = r.failed ? ` (${r.failed} falharam)` : '';
+    if (statusEl) statusEl.textContent = `Cookies: importados ${r.imported}/${r.total}${failTxt}`;
+    let msg = `Importado: ${r.imported} de ${r.total}${failTxt}`;
+    if (r.errors?.length) msg += '\n\nExemplos de erro:\n' + r.errors.join('\n');
+    showModalAlert('Cookies', msg);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Cookies: erro — ' + (e.message || e);
+    showModalAlert('Erro', e?.message || 'Falha ao importar cookies.');
+  }
+}
+
+/* ===== PRESETS DE DISPOSITIVO ===== */
+async function setPreset(type) {
+  try {
+    await window.fakecam.setDevicePreset(type);
+    updatePresetButtons(type);
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Falha ao trocar preset.');
+  }
+}
+
+async function novoFingerprint() {
+  try {
+    await window.fakecam.newFingerprint();
+    showModalAlert('OK', 'Novo fingerprint aplicado. A página será recarregada.');
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Falha ao gerar fingerprint.');
+  }
+}
+
+function closeModalFingerprint() {
+  document.getElementById('modalFingerprint').classList.remove('show');
+}
+
+async function verFingerprint() {
+  try {
+    const data = await window.fakecam.identityGet();
+    const fp = data.fingerprint || {};
+    const lines = [
+      `Preset: ${fp.preset || '—'}`,
+      `ID: ${fp.fingerprintId || '—'}`,
+      ``,
+      `User-Agent:`,
+      (fp.userAgent || '—').substring(0, 80) + (fp.userAgent?.length > 80 ? '…' : ''),
+      ``,
+      `Navigator:`,
+      `  Platform: ${fp.platform || '—'}`,
+      `  Vendor: ${fp.vendor ?? '—'}`,
+      `  Product: ${fp.product ?? '—'}`,
+      `  AppName: ${fp.appName ?? '—'}`,
+      `  MaxTouchPoints: ${fp.maxTouchPoints ?? '—'}`,
+      ``,
+      `Resolução: ${fp.width || '—'} × ${fp.height || '—'}`,
+      `Timezone: ${fp.timezone || '—'}`,
+      `Idiomas: ${Array.isArray(fp.languages) ? fp.languages.join(', ') : (fp.language || '—')}`,
+      ``,
+      `Hardware:`,
+      `  CPU: ${fp.hardwareConcurrency ?? '—'} núcleos`,
+      `  RAM: ${fp.deviceMemory !== undefined ? fp.deviceMemory + ' GB' : '— (Safari iOS)'}`,
+      ``,
+      `Tela:`,
+      `  Largura: ${fp.screenWidth ?? '—'}`,
+      `  Altura: ${fp.screenHeight ?? '—'}`,
+      `  Color depth: ${fp.colorDepth ?? '—'}`,
+      `  Pixel ratio: ${fp.pixelRatio ?? '—'}`,
+      ``,
+      `WebGL: ${fp.webglVendor || '—'} / ${fp.webglRenderer || '—'}`,
+      `Ruído (Canvas): ${fp.canvasNoise != null ? fp.canvasNoise.toFixed(6) : '—'}`,
+    ];
+    document.getElementById('fingerprintContent').textContent = lines.join('\n');
+    document.getElementById('modalFingerprint').classList.add('show');
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Falha ao carregar fingerprint.');
+  }
+}
+
+/* ===== TEST CAM ===== */
+function testarCam() {
+  window.fakecam.openCamTest();
+}
+
+/* ===== AUTO-INJEÇÃO DE MÍDIA ===== */
+async function configMediaInjection(type) {
+  try {
+    const result = await window.fakecam.selectFileForInjection(type);
+    if (result?.success) {
+      showModalAlert('Sucesso', result.message || `Arquivo configurado para auto-injeção (${type})`);
+      await updateMediaInjectionStatus();
+    } else {
+      showModalAlert('Erro', result?.message || 'Falha ao configurar arquivo');
+    }
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Erro ao selecionar arquivo');
+  }
+}
+
+async function clearMediaInjection() {
+  try {
+    const result = await window.fakecam.setMediaForInjection(null, null);
+    if (result?.success) {
+      showModalAlert('Sucesso', 'Auto-injeção desativada');
+      await updateMediaInjectionStatus();
+    }
+  } catch (e) {
+    showModalAlert('Erro', e?.message || 'Erro ao limpar configuração');
+  }
+}
+
+async function updateMediaInjectionStatus() {
+  try {
+    const media = await window.fakecam.getMediaForInjection();
+    const statusEl = document.getElementById('mediaInjectionStatus');
+    if (media) {
+      statusEl.textContent = `✓ ${media.type}: ${media.filename || 'configurado'}`;
+      statusEl.style.color = '#10b981';
+    } else {
+      statusEl.textContent = 'Não configurado';
+      statusEl.style.color = '#64748b';
+    }
+  } catch (e) {
+    console.warn('Erro ao atualizar status de injeção:', e);
+  }
+}
+
+async function toggleDriveMode() {
+  try {
+    const current = await window.fakecam.driveModeGet();
+    await window.fakecam.driveModeSet(!current);
+    await updateDriveModeUI();
+  } catch (e) {
+    console.warn('Erro ao alternar Modo Drive:', e);
+  }
+}
+
+async function updateDriveModeUI() {
+  try {
+    const enabled = await window.fakecam.driveModeGet();
+    const btn = document.getElementById('driveModeBtn');
+    const statusEl = document.getElementById('driveModeStatus');
+    if (btn) {
+      btn.textContent = enabled ? '🚗 Modo Drive: ON' : '🚗 Modo Drive: OFF';
+      btn.classList.toggle('btn-toggle-on', !!enabled);
+    }
+    if (statusEl) {
+      statusEl.textContent = enabled ? 'Ativado' : 'Desativado';
+      statusEl.style.color = enabled ? '#10b981' : '#64748b';
+    }
+  } catch (e) {
+    console.warn('Erro ao atualizar UI Modo Drive:', e);
+  }
+}
+
+async function toggleIdentityLivenessOff() {
+  try {
+    const current = await window.fakecam.identityLivenessOffGet();
+    await window.fakecam.identityLivenessOffSet(!current);
+    await updateIdentityLivenessOffUI();
+  } catch (e) {
+    console.warn('Erro ao alternar Liveness/doc (H2):', e);
+  }
+}
+
+async function updateIdentityLivenessOffUI() {
+  try {
+    const enabled = await window.fakecam.identityLivenessOffGet();
+    const btn = document.getElementById('identityLivenessOffBtn');
+    const statusEl = document.getElementById('identityLivenessOffStatus');
+    if (btn) {
+      btn.textContent = enabled ? '📄 Liveness H2: ON' : '📄 Liveness H2: OFF';
+      btn.classList.toggle('btn-toggle-on', !!enabled);
+    }
+    if (statusEl) {
+      statusEl.textContent = enabled ? 'Ativado' : 'Desativado';
+      statusEl.style.color = enabled ? '#10b981' : '#64748b';
+    }
+  } catch (e) {
+    console.warn('Erro ao atualizar UI Liveness/doc (H2):', e);
+  }
+}
+
+/* ===== LOGS DE UPLOAD ===== */
+function closeModalLogs() {
+  document.getElementById('modalLogs').classList.remove('show');
+}
+
+async function verLogsUpload() {
+  document.getElementById('modalLogs').classList.add('show');
+  await atualizarLogs();
+}
+
+async function salvarLogs() {
+  try {
+    const result = await window.fakecam.saveUploadLogs();
+    if (result.success) {
+      await showModalAlert('Logs Salvos', `Logs salvos com sucesso!\n\nArquivo: ${result.file}\nEntradas: ${result.count}`);
+    } else {
+      await showModalAlert('Erro', result.error || 'Erro ao salvar logs');
+    }
+  } catch (e) {
+    await showModalAlert('Erro', e.message || 'Erro ao salvar logs');
+  }
+}
+
+/* ===== MONITOR BURP (MODO DRIVE) ===== */
+async function atualizarBurpMonitor() {
+  const el = document.getElementById('burpMonitor');
+  if (!el) return;
+  el.textContent = 'Carregando alterações do Modo Drive...';
+  try {
+    const result = await window.fakecam.getUploadLogs();
+    if (result.error) {
+      el.textContent = 'Erro: ' + result.error;
+      return;
+    }
+    const logs = (result.logs || []).filter((log) =>
+      log && (log.type === 'DRIVE_SESSION_FLAGS' || log.type === 'DRIVE_DECISION')
+    );
+    if (logs.length === 0) {
+      el.textContent = 'Nenhuma mudança registrada ainda.\nAtive o Modo Drive e faça o fluxo de driver/CNH para ver aqui.';
+      return;
+    }
+    const sorted = logs.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const lines = sorted.map((log) => {
+      const dt = log.timestamp ? new Date(log.timestamp).toLocaleTimeString('pt-BR') : '';
+      const url = log.data && log.data.url ? log.data.url : '';
+      if (log.type === 'DRIVE_SESSION_FLAGS') {
+        const fields = (log.data && log.data.changedFields) || [];
+        return `[${dt}] SESSION_FLAGS\nURL: ${url}\nCampos alterados: ${fields.join(', ') || '(nenhum)'}`;
+      }
+      if (log.type === 'DRIVE_DECISION') {
+        return `[${dt}] DECISION\nURL: ${url}\nDecisão forçada: approved (9001)`;
+      }
+      return `[${dt}] ${log.type}\nURL: ${url}`;
+    });
+    el.textContent = lines.join('\n\n');
+  } catch (e) {
+    el.textContent = 'Erro ao carregar: ' + (e.message || e);
+  }
+}
+
+/* ===== JANELA TOOLBOX ===== */
+function minimizarToolbox() {
+  try {
+    window.fakecam.minimizeToolbox?.();
+  } catch (e) {}
+}
+
+async function atualizarLogs() {
+  const logsContent = document.getElementById('logsContent');
+  logsContent.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">Carregando logs...</div>';
+  
+  try {
+    const result = await window.fakecam.getUploadLogs();
+    
+    if (result.error) {
+      logsContent.innerHTML = `<div style="color:#ef4444;padding:12px;">Erro: ${result.error}</div>`;
+      return;
+    }
+    
+    const logs = result.logs || [];
+    
+    if (logs.length === 0) {
+      logsContent.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">Nenhum log encontrado. Faça um upload para ver os logs aqui.</div>';
+      return;
+    }
+    
+    // Agrupa logs por tipo
+    const logsByType = {};
+    logs.forEach(log => {
+      if (!logsByType[log.type]) logsByType[log.type] = [];
+      logsByType[log.type].push(log);
+    });
+    
+    let html = '';
+    
+    // Mostra logs mais recentes primeiro
+    const sortedLogs = logs.slice().reverse();
+    
+    sortedLogs.forEach((log, idx) => {
+      const time = new Date(log.timestamp).toLocaleTimeString('pt-BR');
+      const typeColors = {
+        'REQUEST': '#3b82f6',
+        'REQUEST_XHR': '#3b82f6',
+        'RESPONSE': '#10b981',
+        'RESPONSE_XHR': '#10b981',
+        'MODIFY_FIELD': '#f59e0b',
+        'ADD_FIELD': '#f59e0b',
+        'REPLACE_MEDIA': '#8b5cf6',
+        'REPLACE_MEDIA_XHR': '#8b5cf6',
+        'ERROR': '#ef4444',
+        'MEDIA_UPDATE': '#06b6d4'
+      };
+      
+      const color = typeColors[log.type] || '#64748b';
+      
+      html += `<div style="margin-bottom:16px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;border-left:3px solid ${color};">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">`;
+      html += `<span style="color:${color};font-weight:600;font-size:12px;">${log.type}</span>`;
+      html += `<span style="color:#64748b;font-size:11px;">${time}</span>`;
+      html += `</div>`;
+      
+      if (log.data) {
+        if (log.data.url) {
+          html += `<div style="color:#e2e8f0;font-size:11px;margin-bottom:4px;word-break:break-all;"><strong>URL:</strong> ${log.data.url}</div>`;
+        }
+        if (log.data.method) {
+          html += `<div style="color:#e2e8f0;font-size:11px;margin-bottom:4px;"><strong>Método:</strong> ${log.data.method}</div>`;
+        }
+        if (log.data.status) {
+          html += `<div style="color:#e2e8f0;font-size:11px;margin-bottom:4px;"><strong>Status:</strong> ${log.data.status} ${log.data.statusText || ''}</div>`;
+        }
+        if (log.data.field) {
+          html += `<div style="color:#e2e8f0;font-size:11px;margin-bottom:4px;"><strong>Campo:</strong> ${log.data.field}</div>`;
+          if (log.data.old !== undefined) html += `<div style="color:#94a3b8;font-size:10px;margin-left:12px;">Antes: ${JSON.stringify(log.data.old)}</div>`;
+          if (log.data.new !== undefined) html += `<div style="color:#94a3b8;font-size:10px;margin-left:12px;">Depois: ${JSON.stringify(log.data.new)}</div>`;
+        }
+        if (log.data.body) {
+          html += `<details style="margin-top:8px;">`;
+          html += `<summary style="color:#94a3b8;font-size:11px;cursor:pointer;">Ver payload</summary>`;
+          html += `<pre style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.3);border-radius:4px;font-size:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">${JSON.stringify(log.data.body, null, 2)}</pre>`;
+          html += `</details>`;
+        }
+        if (log.data.error) {
+          html += `<div style="color:#ef4444;font-size:11px;margin-top:4px;">Erro: ${log.data.error}</div>`;
+        }
+      }
+      
+      html += `</div>`;
+    });
+    
+    logsContent.innerHTML = html;
+    
+    // Adiciona contador no título
+    const title = document.querySelector('#modalLogs h3');
+    if (title) {
+      title.textContent = `Logs de Upload (${logs.length} entradas)`;
+    }
+    
+  } catch (e) {
+    logsContent.innerHTML = `<div style="color:#ef4444;padding:12px;">Erro ao carregar logs: ${e.message}</div>`;
+    console.error('Erro ao carregar logs:', e);
+  }
+}
+
+/* ===== INIT ===== */
+window.addEventListener('DOMContentLoaded', async () => {
+  initModalProxy();
+  await refreshProfiles();
+  await refreshProfileData();
+  await refreshShortcuts();
+  setInterval(refreshProfiles, 5000);
+  setInterval(refreshProfileData, 3000);
+  await updateMediaInjectionStatus();
+  await updateDriveModeUI();
+  await updateIdentityLivenessOffUI();
+  setInterval(updateMediaInjectionStatus, 5000);
+  window.fakecam.onIdentityCurrent?.((payload) => {
+    if (payload.url !== undefined) document.getElementById('profileUrl').value = payload.url || '';
+    if (payload.fingerprint) {
+      const fp = payload.fingerprint;
+      const preset = fp.preset || 'iphone';
+      const res = fp.width && fp.height ? `${fp.width}×${fp.height}` : '—';
+      const id = fp.fingerprintId ? ` #${fp.fingerprintId}` : '';
+      document.getElementById('fingerprintInfo').textContent = `${preset} • ${res}${id}`;
+      updatePresetButtons(preset);
+    }
+  });
+});
+</script>
+
+</body>
+</html>

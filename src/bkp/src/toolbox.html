@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FakeCam Toolbox</title>
+<style>
+  body {
+    margin:0;
+    background:rgba(20,20,28,0.95);
+    color:#fff;
+    font-family:system-ui;
+    padding:15px;
+  }
+  button {
+    background:#2563eb;
+    color:white;
+    border:none;
+    padding:10px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    margin:5px 5px 0 0;
+    font-weight:bold;
+  }
+  button:hover {
+    filter:brightness(1.08);
+  }
+  input {
+    padding:8px;
+    margin:5px 0;
+    border-radius:8px;
+    border:1px solid #444;
+    background:#111;
+    color:white;
+    width:100%;
+    box-sizing:border-box;
+  }
+  .row { margin:12px 0; }
+  h2 { margin:0 0 15px; color:#60a5fa; }
+  label { font-size:12px; opacity:.8; display:block; margin-bottom:4px; }
+</style>
+</head>
+<body>
+
+<h2>FakeCam Toolbox</h2>
+
+<!-- Carregar imagem / vídeo -->
+<div class="row">
+  <button onclick="document.getElementById('img').click()">IMAGEM</button>
+  <button onclick="document.getElementById('vid').click()">VÍDEO</button>
+  <input id="img" type="file" accept="image/*" hidden onchange="fileToDataUrl(this,'image')">
+  <input id="vid" type="file" accept="video/*" hidden onchange="fileToDataUrl(this,'video')">
+</div>
+
+<!-- Controles de zoom / posição -->
+<div class="row">
+  <label for="zoom">Zoom</label>
+  <input id="zoom" type="range" min="0.5" max="3" step="0.05" value="1" oninput="sendParams()">
+
+  <label for="posX">X</label>
+  <input id="posX" type="range" min="-500" max="500" step="10" value="0" oninput="sendParams()">
+
+  <label for="posY">Y</label>
+  <input id="posY" type="range" min="-500" max="500" step="10" value="0" oninput="sendParams()">
+</div>
+
+<!-- Navegação -->
+<div class="row">
+  <label for="url">Navegar para URL</label>
+  <input id="url" placeholder="https://exemplo.com">
+  <button onclick="irUrl()">IR</button>
+</div>
+
+<div class="row">
+  <button onclick="testarCam()">TESTAR CÂMERA (test-cam.html)</button>
+</div>
+
+<script>
+function fileToDataUrl(input, type) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (type === 'image') {
+      window.fakecam.setImageDataUrl(reader.result);
+    } else {
+      window.fakecam.setVideoDataUrl(reader.result);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function sendParams() {
+  const zoom = parseFloat(document.getElementById('zoom').value);
+  const x = parseInt(document.getElementById('posX').value, 10);
+  const y = parseInt(document.getElementById('posY').value, 10);
+  window.fakecam.updateParams({ zoom, x, y });
+}
+
+function irUrl() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) {
+    alert('Informe uma URL');
+    return;
+  }
+  window.fakecam.navigateToUrl(url);
+}
+
+function testarCam() {
+  window.fakecam.openCamTest();
+}
+</script>
+
+</body>
+</html>
